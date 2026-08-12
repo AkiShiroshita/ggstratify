@@ -1,0 +1,10 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+figures/
+data-raw/
+vignettes/
+TODO.md
+*.Rcheck/
+Rplots.pdf

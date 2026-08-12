@@ -1,0 +1,30 @@
+# Files that must not go into the tarball CRAN receives.
+# Anything listed here is a Perl regular expression matched against the path
+# relative to the package root.
+
+# RStudio / IDE state
+^.*\.Rproj$
+^\.Rproj\.user$
+
+# Version control and CI
+^\.git$
+^\.gitignore$
+^\.github$
+
+# pkgdown: the config and the rendered site are development artefacts
+^_pkgdown\.yml$
+^docs$
+^pkgdown$
+
+# README source (only the rendered README.md is shipped)
+^README\.Rmd$
+
+# Development notes and scratch output
+^figures$
+^data-raw$
+^TODO\.md$
+^CRAN-SUBMISSION$
+^cran-comments\.md$
+^revdep$
+^\.Rhistory$
+^\.RData$
