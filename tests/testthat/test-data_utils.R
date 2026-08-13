@@ -44,6 +44,15 @@ test_that("gs_prepare_data rejects non-tabular input", {
   expect_error(gs_prepare_data(1:10), "data.frame")
 })
 
+test_that("gs_prepare_data does not read files", {
+  # A path is not data. Reading one here would type every column by guess,
+  # and the app would then describe the data on those guesses.
+  path <- tempfile(fileext = ".csv")
+  on.exit(unlink(path), add = TRUE)
+  utils::write.csv(iris, path, row.names = FALSE)
+  expect_error(gs_prepare_data(path), "data.frame")
+})
+
 test_that("gs_clean_names fixes blank, duplicated and reserved names", {
   dt <- data.table::data.table(1:2, 1:2, 1:2)
   data.table::setnames(dt, c("x", "x", ".strat_label"))

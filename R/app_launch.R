@@ -72,6 +72,22 @@
 #' given; it does not guess what you meant. A grouping variable stored as
 #' `1, 2, 3` will be described as a number.
 #'
+#' This is why the data must be an object you already have in your session.
+#' There is no file to choose from inside the application, and no file path to
+#' hand it: a data set that arrives by being read from disk arrives with types
+#' that a reader guessed, and it is then described on those guessed types
+#' without anyone having looked at them. Read the file yourself, run
+#' [str()] or [summary()] over the result, fix the types that are wrong, and
+#' pass that object:
+#'
+#' ```
+#' cohort <- read.csv("cohort.csv")
+#' cohort$treatment <- factor(cohort$treatment,
+#'                            levels = c("Control", "Low dose", "High dose"))
+#' str(cohort)
+#' ggstratify(cohort)
+#' ```
+#'
 #' The figure types, themes and palettes otherwise match those offered by the
 #' \pkg{ggplotgui} package. All data handling uses \pkg{data.table}. Figures
 #' are written as PNG (through \pkg{ragg}) or as SVG, and the "R-code" tab
@@ -81,11 +97,13 @@
 #' code generator, so the code you are shown is the code that made the
 #' figure.
 #'
-#' @param dataset A data frame -- including a `tibble` or a `data.table` -- a
-#'   matrix, or a path to a `.csv`, `.tsv`, `.txt` or `.rds` file. Whatever it
-#'   is given becomes a plain `data.table`, so a grouped `tibble` is described
-#'   as its rows, not as its groups. When `NULL` the app starts with a file
-#'   upload control. The object is copied, never modified in place.
+#' @param dataset The data to describe, and the one thing the function needs:
+#'   a data frame -- including a `tibble` or a `data.table` -- or a matrix,
+#'   already read into your session and already of the types you mean. A file
+#'   path is not accepted; see *Before you start*. Whatever it is given becomes
+#'   a plain `data.table`, so a grouped `tibble` is described as its rows, not
+#'   as its groups. The object is copied, never modified in place, and its name
+#'   is what the generated code refers to it by.
 #' @param launch.browser Passed to [shiny::runApp()]. `TRUE` opens the system
 #'   browser.
 #' @param ... Further arguments passed to [shiny::runApp()].
@@ -99,28 +117,23 @@
 #'   ggstratify(epi_cohort)
 #' }
 #' @export
-ggstratify <- function(dataset = NULL, launch.browser = TRUE, ...) {
+ggstratify <- function(dataset, launch.browser = TRUE, ...) {
+  # Read before `dataset` is forced, so that the name in the generated code is
+  # the expression the user wrote rather than the value it evaluated to.
+  data_name <- gs_data_name(substitute(dataset))
   checkmate::assert_flag(launch.browser)
-  # ggplotgui's entry point defaults to NA rather than NULL; accept both, so
-  # that habits carried over from it still work.
-  if (length(dataset) == 1L && is.atomic(dataset) && is.na(dataset)) {
-    dataset <- NULL
-  }
-  if (!is.null(dataset)) {
-    checkmate::assert(
-      checkmate::check_data_frame(dataset, min.cols = 1L),
-      checkmate::check_matrix(dataset, min.cols = 1L),
-      checkmate::check_file_exists(dataset, access = "r"),
-      .var.name = "dataset",
-      combine = "or"
-    )
-    # Fail here rather than inside the app, where the message is easy to miss.
-    dataset <- gs_prepare_data(dataset)
-  }
+  checkmate::assert(
+    checkmate::check_data_frame(dataset, min.cols = 1L),
+    checkmate::check_matrix(dataset, min.cols = 1L),
+    .var.name = "dataset",
+    combine = "or"
+  )
+  # Fail here rather than inside the app, where the message is easy to miss.
+  dataset <- gs_prepare_data(dataset)
 
   app <- shiny::shinyApp(
-    ui = gs_ui(has_data = !is.null(dataset)),
-    server = gs_server(dataset),
+    ui = gs_ui(),
+    server = gs_server(dataset, data_name),
     # ragg is a markedly faster raster device than the default on Windows.
     onStart = function() {
       old <- options(shiny.useragg = TRUE)
@@ -130,4 +143,23 @@ ggstratify <- function(dataset = NULL, launch.browser = TRUE, ...) {
 
   shiny::runApp(app, launch.browser = launch.browser, ...)
   invisible(NULL)
+}
+
+#' The name the generated code should call the data by
+#'
+#' `ggstratify(cohort)` should print code that starts `d <- cohort`, not
+#' `d <- mydata`. Anything that is not a plain variable name -- a subset, a
+#' pipeline, a literal -- would not be a name the reader could paste, so those
+#' fall back to the placeholder the Export panel starts with, which the user
+#' can overwrite.
+#'
+#' @param expr The unevaluated `dataset` argument, from `substitute()`.
+#' @return A single syntactic name.
+#' @keywords internal
+#' @noRd
+gs_data_name <- function(expr) {
+  if (!is.name(expr)) return("mydata")
+  nm <- as.character(expr)
+  if (!nzchar(nm) || !identical(make.names(nm), nm)) return("mydata")
+  nm
 }

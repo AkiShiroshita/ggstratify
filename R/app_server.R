@@ -4,71 +4,42 @@
 # flipping back to a previous setting is instant.
 
 #' Build the ggstratify server function
-#' @param dataset Optional data supplied to the launcher.
+#'
+#' The data set is fixed for the life of the app: it is the object the launcher
+#' was called with, and there is no way to load another one from inside. That
+#' is deliberate -- see the *Before you start* section of [ggstratify()] -- and
+#' it is what lets `raw` be an ordinary value rather than a reactive.
+#'
+#' @param dataset The data supplied to the launcher.
+#' @param data_name What the generated code should call it.
 #' @keywords internal
 #' @noRd
-gs_server <- function(dataset = NULL) {
+gs_server <- function(dataset, data_name = "mydata") {
+  # Coerced once, outside the session, so that every session of a hosted app
+  # shares the work rather than repeating it.
+  raw <- gs_prepare_data(dataset)
+
   function(input, output, session) {
 
-    raw <- shiny::reactiveVal(NULL)
     # Categorization rules, in the order the user added them.
     cuts <- shiny::reactiveVal(list())
-    # Bumped whenever the data changes; part of the plot cache key so that a
-    # new data set never shows a cached plot from the old one.
-    data_token <- shiny::reactiveVal(0L)
 
-    load_data <- function(x) {
-      raw(gs_prepare_data(x))
-      # Rules written for the previous data set cannot be assumed to fit this
-      # one, and silently keeping the ones that happen to still apply would be
-      # worse than starting clean.
-      cuts(list())
-      # load_data() also runs straight from the server body when the launcher
-      # was given a data set, where reading a reactiveVal is not allowed.
-      data_token(shiny::isolate(data_token()) + 1L)
+    # The name the data was passed under, rather than the placeholder the
+    # control starts with, so the code on the R-code tab runs as it is read.
+    if (!identical(data_name, "mydata")) {
+      shiny::updateTextInput(session, "data_name", value = data_name)
     }
 
     # Rules that can actually be applied to the data in hand.
-    cuts_used <- shiny::reactive({
-      dt <- raw()
-      if (is.null(dt)) list() else gs_valid_cuts(cuts(), names(dt))
-    })
+    cuts_used <- shiny::reactive(gs_valid_cuts(cuts(), names(raw)))
 
-    # What the whole app works on: the loaded table plus the categorized
-    # columns. They are built by evaluating the very lines the R-code tab
-    # shows, so the app and the script cannot disagree about them.
-    dat <- shiny::reactive({
-      dt <- raw()
-      if (is.null(dt)) return(NULL)
-      gs_apply_cuts(dt, cuts_used())
-    })
+    # What the whole app works on: the data plus the categorized columns. They
+    # are built by evaluating the very lines the R-code tab shows, so the app
+    # and the script cannot disagree about them.
+    dat <- shiny::reactive(gs_apply_cuts(raw, cuts_used()))
 
     # Re-derived whenever a categorized column appears or disappears.
-    info <- shiny::reactive({
-      dt <- dat()
-      if (is.null(dt)) NULL else gs_classify_vars(dt)
-    })
-
-    if (!is.null(dataset)) {
-      load_data(dataset)
-    }
-
-    shiny::observeEvent(input$data_file, {
-      shiny::req(input$data_file)
-      res <- try(load_data(input$data_file$datapath), silent = TRUE)
-      if (inherits(res, "try-error")) {
-        shiny::showNotification(
-          paste("Could not read the file:", conditionMessage(attr(res, "condition"))),
-          type = "error", duration = 10
-        )
-      } else {
-        # fread() names columns after the file, not after the temp path.
-        shiny::updateTextInput(
-          session, "data_name",
-          value = tools::file_path_sans_ext(input$data_file$name)
-        )
-      }
-    })
+    info <- shiny::reactive(gs_classify_vars(dat()))
 
     # --- populate the selectors once per data set ----------------------------
 
@@ -83,8 +54,6 @@ gs_server <- function(dataset = NULL) {
 
     shiny::observeEvent(info(), {
       nfo <- info()
-      shiny::req(nfo)
-
       choices <- gs_selector_choices(nfo)
       for (id in names(choices)) {
         shiny::updateSelectInput(session, id, choices = choices[[id]],
@@ -102,7 +71,7 @@ gs_server <- function(dataset = NULL) {
     # variable changes but never overwriting something the user typed.
     shiny::observeEvent(list(input$cut_var, cuts_used()), {
       dt <- dat()
-      shiny::req(dt, input$cut_var)
+      shiny::req(input$cut_var)
       # Nothing chosen yet: there is no name to suggest.
       if (identical(input$cut_var, GS_NONE)) return()
       suggested <- gs_cut_name(input$cut_var, names(dt))
@@ -115,10 +84,6 @@ gs_server <- function(dataset = NULL) {
 
     shiny::observeEvent(input$add_cut, {
       dt <- dat()
-      if (is.null(dt)) {
-        shiny::showNotification("Load a data file first.", type = "warning")
-        return()
-      }
       shiny::req(input$cut_var)
       if (identical(input$cut_var, GS_NONE)) {
         shiny::showNotification("Choose the continuous variable to categorize.",
@@ -188,10 +153,8 @@ gs_server <- function(dataset = NULL) {
         # a round trip to notice. Until it does, the ticked variable would
         # otherwise reach the generated script, which would then not run.
         dt <- dat()
-        if (!is.null(dt)) {
-          spec$strat_vars <- intersect(spec$strat_vars, names(dt))
-          if (!spec$facet %in% names(dt)) spec$facet <- ""
-        }
+        spec$strat_vars <- intersect(spec$strat_vars, names(dt))
+        if (!spec$facet %in% names(dt)) spec$facet <- ""
         gs_normalize_spec(spec)
       }),
       millis = 300
@@ -206,14 +169,11 @@ gs_server <- function(dataset = NULL) {
     # in the title and the rows in the figure the same number.
     layer_data <- shiny::reactive({
       dt <- dat()
-      if (is.null(dt)) return(NULL)
       dt[gs_complete_layers(dt, gs_layer_vars(spec_r()))]
     })
 
     missing_report <- shiny::reactive({
-      dt <- dat()
-      shiny::req(dt)
-      gs_missing_report(dt, gs_layer_vars(spec_r()))
+      gs_missing_report(dat(), gs_layer_vars(spec_r()))
     })
 
     output$layer_summary <- shiny::renderUI({
@@ -242,10 +202,8 @@ gs_server <- function(dataset = NULL) {
     # --- strata -------------------------------------------------------------
 
     strata <- shiny::reactive({
-      dt <- layer_data()
-      shiny::req(dt)
       spec <- spec_r()
-      gs_strata_table(dt, spec$strat_vars, spec$min_n, spec$strat_mode)
+      gs_strata_table(layer_data(), spec$strat_vars, spec$min_n, spec$strat_mode)
     })
 
     # updateSelectInput() moves the box back to its first choice, and strata()
@@ -278,7 +236,7 @@ gs_server <- function(dataset = NULL) {
     # tab writes the code for. `NULL` when the layers make a single figure.
     current_stratum <- shiny::reactive({
       spec <- spec_r()
-      if (is.null(dat()) || !length(spec$strat_vars)) return(NULL)
+      if (!length(spec$strat_vars)) return(NULL)
       st <- strata()[keep == TRUE]
       if (!nrow(st)) return(NULL)
       idx <- suppressWarnings(as.integer(input$preview_stratum))
@@ -320,9 +278,7 @@ gs_server <- function(dataset = NULL) {
     output$preview_note <- shiny::renderUI({
       spec <- spec_r()
       thr <- gs_sample_threshold(spec)
-      if (!isTRUE(input$sample_big) || is.null(dat()) || nrow(dat()) <= thr) {
-        return(NULL)
-      }
+      if (!isTRUE(input$sample_big) || nrow(dat()) <= thr) return(NULL)
       msg <- sprintf(
         paste("Preview drawn from a random sample of about %s rows%s.",
               "The exported figures and the generated code always use every",
@@ -343,7 +299,6 @@ gs_server <- function(dataset = NULL) {
 
     output$plot <- shiny::renderPlot({
       dt <- layer_data()
-      shiny::validate(shiny::need(!is.null(dt), "Load a data file to begin."))
       probs <- problems()
       shiny::validate(shiny::need(!length(probs), paste(probs, collapse = "\n")))
 
@@ -375,15 +330,15 @@ gs_server <- function(dataset = NULL) {
         gs_eval_plot(gs_code_figure(spec, "d", title_expr = title), d)
       }
     }, res = GS_PREVIEW_RES) |>
+      # The data cannot change under the app, so the spec -- which carries the
+      # categorization rules -- plus the preview controls is the whole key.
       shiny::bindCache(spec_r(), input$preview_mode, input$preview_stratum,
-                       input$sample_big, data_token())
+                       input$sample_big)
 
     # --- tables -------------------------------------------------------------
 
     output$data_table <- shiny::renderTable({
-      dt <- dat()
-      shiny::req(dt)
-      utils::head(dt, 200L)
+      utils::head(dat(), 200L)
     }, striped = TRUE, spacing = "xs", rownames = FALSE, digits = 4)
 
     # A one-line count of what will and will not be drawn, so the n = 0 case
@@ -466,10 +421,6 @@ gs_server <- function(dataset = NULL) {
 
     shiny::observeEvent(input$export, {
       dt <- layer_data()
-      if (is.null(dt)) {
-        shiny::showNotification("Load a data file first.", type = "warning")
-        return()
-      }
       probs <- problems()
       if (length(probs)) {
         shiny::showNotification(paste(probs, collapse = " "), type = "error",
@@ -570,8 +521,15 @@ GS_PREVIEW_RES <- 150
 # Row counts above which a preview is drawn from a sample. Scatter and Line
 # need a much lower cap: every row becomes its own mark or line segment, so
 # they cost roughly 20x what a boxplot of the same data costs.
-GS_SAMPLE_SCATTER <- 50000L
-GS_SAMPLE_OTHER <- 500000L
+#
+# Both caps are set high on purpose. Sampling is a compromise -- it is the one
+# place where what is on screen is not what the data says -- so it should be
+# reached by data that genuinely will not draw, not by data that is merely
+# large. A boxplot, histogram or density summarises its rows before drawing
+# anything, so five million of them is a few seconds of arithmetic; the caps
+# below are where the wait stops being worth it, not where it starts.
+GS_SAMPLE_SCATTER <- 1000000L
+GS_SAMPLE_OTHER <- 10000000L
 
 #' Row cap for previewing a spec's figure
 #'
@@ -600,15 +558,19 @@ gs_sample_threshold <- function(spec) {
 #' keep their rows instead of being washed out by large ones.
 #'
 #' @param d A `data.table`.
-#' @param spec A spec list, which sets the row cap and the sampling unit.
+#' @param spec A spec list, which sets the sampling unit and, by default, the
+#'   row cap.
 #' @param enabled Whether the user left subsampling switched on.
 #' @param by Optional grouping column to sample within.
+#' @param threshold Row cap. Defaults to the one the spec's plot type asks
+#'   for; passed explicitly by the tests, which would otherwise have to
+#'   allocate a table of the real cap's size to reach this code at all.
 #' @return `d`, or a sample of it.
 #' @keywords internal
 #' @noRd
-gs_downsample <- function(d, spec, enabled = TRUE, by = NULL) {
+gs_downsample <- function(d, spec, enabled = TRUE, by = NULL,
+                          threshold = gs_sample_threshold(spec)) {
   if (!isTRUE(enabled) || !nrow(d)) return(d)
-  threshold <- gs_sample_threshold(spec)
   if (nrow(d) <= threshold) return(d)
 
   # Blank for every plot type but Line, see gs_normalize_spec().

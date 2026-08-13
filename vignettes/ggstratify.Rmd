@@ -1,0 +1,436 @@
+---
+title: "Getting started with ggstratify"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting started with ggstratify}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+```{r setup}
+library(ggstratify)
+```
+
+## Why bother describing the data first
+
+The decisions that shape a study are made before any model is fitted: which
+variables to adjust for, where to cut a continuous one, whether a subgroup is
+even large enough to talk about. Those decisions are made by a person, and a
+person who has not looked at the data is deciding from assumption rather than
+from evidence. That has not changed now that a model can write the analysis
+code for you; if anything it matters more, because the code arrives faster
+than the understanding does.
+
+Descriptive analysis is also where most of the work is, and most of the
+repetition. You draw length of stay by treatment arm, then the same figure
+for men, then for women, then for each study site. The plotting code is the
+same every time; only the subset changes. Doing it by hand is slow and easy
+to get wrong, and a collaborator will ask for the one cut you skipped.
+
+`ggstratify` turns that loop into a few clicks and then hands you the code,
+so the description can be repeated, shared, or produced on request. It runs
+entirely on your machine: no network, no model, nothing leaves the session.
+That is deliberate — the environments where patient data lives are usually
+the environments where you cannot paste it into anything.
+
+## Before you start: fix the types
+
+`ggstratify` describes columns as they are typed. It does not guess what you
+meant. Convert each column to the type you intend, with factor levels in the
+order you want them read, and then hand it over:
+
+```{r, eval = FALSE}
+dat <- transform(
+  dat,
+  sex      = factor(sex, levels = c("Male", "Female")),
+  severity = factor(severity, levels = c("Mild", "Moderate", "Severe")),
+  age      = as.numeric(age)
+)
+```
+
+A group stored as `1, 2, 3` will be described as a number. Factor level order
+becomes the order of the panels, the figures and the axis.
+
+This is also why the app takes an object rather than a file. There is no
+upload control in the application, and `ggstratify()` does not accept a file
+path. Data read from disk is typed by whatever the reader guessed, and would
+then be described on those guesses -- which is exactly the mistake this
+section is about. Read the file yourself, look at the result, fix the types
+that are wrong, and pass that object:
+
+```{r, eval = FALSE}
+cohort <- read.csv("cohort.csv")
+str(cohort)          # look before describing
+ggstratify(cohort)
+```
+
+## Launching the app
+
+```{r, eval = FALSE}
+ggstratify(epi_cohort)
+```
+
+That is the only function in the package.
+
+`epi_cohort` ships with the package: 600 simulated patients with a few
+continuous measurements and several categorical variables.
+
+```{r}
+str(epi_cohort)
+```
+
+Any data frame will do -- a `tibble` and a `data.table` included -- or a
+matrix. Whatever you pass is copied first: your object is never modified in
+place, even though the app uses `data.table` internally. The name you pass it
+under is the name the generated code refers to it by, so the code on the
+**R-code** tab runs as it is read.
+
+## The layers
+
+A description has a variable being described and, around it, the variables
+you want to see it within. Those are the layers, and the **Layers** panel
+asks you where to put each one.
+
+| Layers | What you get |
+|---|---|
+| 1 | The variable on its own: one plain figure. |
+| 2 | The second variable becomes the panels of a `facet_wrap()`. Still one figure. |
+| 3 or more | One figure cannot hold them. Choose which variable stays as the panels; the rest split the figures. |
+
+With columns `A`, `B`, `C` and `D`, you might describe `D`, panel it by `C`,
+and split the figures by `A` and `B`. The sidebar keeps a running sentence of
+what the current layers add up to and how many figures they make.
+
+### Separately or crossed
+
+Two or more variables splitting the figures can be taken one at a time, which
+is the default, or crossed. Ticking `sex` (2 levels) and `site` (3) gives:
+
+* **Each variable separately** — five figures: `sex_Male`, `sex_Female`,
+  `site_Site A`, `site_Site B`, `site_Site C`.
+* **Every combination** — six figures: `sex_Male__site_Site A` and so on, for
+  the combinations that actually occur.
+
+Separately is the default because it is usually the question you are asking:
+"what does this look like within each level of each variable", not "what does
+every combination look like". Crossing two five-level variables gives
+twenty-five mostly empty figures. The Strata tab tells you how many of the
+possible combinations occur, so you can see the emptiness before you commit
+to it.
+
+## Missing values are excluded, once, and counted
+
+A row that does not say which panel or which figure it belongs to cannot be
+drawn in one. As soon as a variable becomes a layer, rows missing it are
+excluded — from everything, in one place, before anything is counted. That is
+what keeps three numbers equal: the `N` on the Strata tab, the `N` in the
+figure title, and the rows actually drawn.
+
+They are not dropped quietly. The Strata tab says `excluded rows with a
+missing sex (40)`, and the generated script prints the same count when you
+run it:
+
+```{r, eval = FALSE}
+layer_vars <- c("sex", "severity")
+for (v in layer_vars) {
+  n_na <- sum(is.na(dt[[v]]))
+  if (n_na > 0L) {
+    message("Excluded ", n_na, " row(s) with a missing ", v, ".")
+  }
+  dt <- dt[!is.na(dt[[v]])]
+}
+```
+
+Missing values in the variable being *described* are left to `ggplot2`, which
+warns about them in its usual way.
+
+## Every stratum is counted
+
+The **Strata** tab lists every figure the current layers produce, with the
+number of observations behind it, and the figure titles carry the same number.
+So does every panel inside a figure: panelling by `site` gives strips reading
+`site: Site A (N = 296)` rather than `Site A`, so two panels of visibly
+different width are never compared without saying what they were drawn from.
+The variable is named on the strip as well as the level, because a level does
+not always explain itself: the panels of a categorized variable are bare
+ranges, and `[18,53]` alone does not say what the range is a range of.
+
+Two kinds of stratum are reported but not drawn:
+
+```{r}
+table(epi_cohort$site)
+```
+
+`Site D` is a declared factor level that recruited nobody. Stratifying by
+`site` lists it with `N = 0` and writes no figure for it — an empty figure
+would be worse than an explicit zero.
+
+```{r}
+table(epi_cohort$severity)
+```
+
+`Severe` is small. At the default minimum of 10 observations it is listed
+without a file name rather than drawn. Lower **Minimum N per figure** to 0 to
+include it; `N = 0` strata stay excluded regardless, because there is nothing
+to draw.
+
+## Categorizing a continuous variable
+
+"Length of stay by age group" needs an age group, and the data has an age.
+The **Categorize** panel makes one, in three ways:
+
+* **Quantiles** — equal-sized groups. Four gives quartiles.
+* **Equal-width bins** — equal-width, unequal-sized.
+* **Custom cut points** — the boundaries you type. `65` gives `(-Inf, 65]`
+  and `(65, Inf]`, which is usually what a clinical cut-off means.
+
+The derived variable is an ordinary factor from that point on. It appears in
+every selector, and, because it is categorical, in the **Stratify** list too:
+categorize `age` at 65, tick `age_cat`, and you get one figure per age group.
+
+The generated script builds the same column with the same line, immediately
+after reading the data:
+
+```{r, eval = FALSE}
+dt <- as.data.table(epi_cohort)
+
+# Categorized continuous variables.
+dt[, age_cat := cut(age, breaks = c(-Inf, 65, Inf))]
+```
+
+That is not a re-implementation of what the app did; it is the line the app
+evaluated to make the column you were looking at. Removing the rule removes
+the column and the line together.
+
+Your own object is never touched — the derived column lives only in the
+copy the app holds.
+
+## Change over time
+
+Pick **Line** as the type of graph, put time on the X axis and the
+measurement on the Y axis. Time can be a visit number, a day count or a date;
+unlike a scatter plot, a line plot is not held to a continuous X.
+
+**One line per** decides what a line is. Name the subject identifier and you
+get one line per subject -- the spaghetti plot you draw when you want to see
+how individual patients moved, not just where the average went. Leave it
+empty when each time point already carries one value, such as a mean per
+visit, and the points are joined in x order within each colour group.
+
+Either kind of figure can carry a LOWESS smoother, and so can a scatter plot:
+
+```{r, eval = FALSE}
+p <- ggplot(d, aes(x = visit, y = crp, colour = treatment)) +
+  geom_line(aes(group = id), alpha = 0.6) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "loess", formula = y ~ x, span = 0.75, se = FALSE) +
+  theme_bw()
+```
+
+Note where the ID is mapped. It groups `geom_line()` and nothing else, so the
+smoother is fitted through the subjects rather than along each of them. The
+smoother does inherit the colour grouping, which is what you want: one fit per
+treatment arm, drawn only from that arm's rows, in the same way that
+everything else in this package is computed within the stratum it is drawn in.
+
+The span control is the neighbourhood `stats::loess()` fits over -- larger is
+smoother. The 95% band is optional and off by default, because a descriptive
+smoother is a shape, not a claim.
+
+Previews of a line plot with an ID are sampled one whole subject at a time
+rather than row by row: dropping rows from inside a trajectory would draw a
+line nobody has.
+
+## Kaplan-Meier curves
+
+Pick **Kaplan-Meier curve** as the type of graph and choose two variables: the
+follow-up time and the event indicator. `epi_cohort` carries both.
+
+```{r}
+with(epi_cohort, table(death, treatment))
+```
+
+The event indicator must be `0`/`1`, `1`/`2` or `TRUE`/`FALSE`, which is what
+`survival::Surv()` accepts; a two-level factor is refused with a message
+rather than a stack trace. Optional extras are a 95% confidence band,
+censoring marks, a y axis clamped to 0–1, and a number-at-risk table.
+
+The risk table is drawn under the curve, one row per group, counted at the
+times the x axis is labelled at — the tail of a survival curve is read very
+differently when twelve people are left than when three hundred are. Curve and
+table are stacked with `patchwork::wrap_plots()` and share one x axis, so a
+count always sits under the point of the curve it belongs to.
+
+The fit is computed separately within every grouping variable, every facet
+and every stratum. A curve drawn in one panel is therefore estimated only
+from the rows in that panel, which is the only thing it could honestly mean.
+
+For the same reason, survival curves are the one figure type that is never
+previewed from a subsample. The other types show the shape of a
+distribution, which survives sampling; a survival curve *is* the estimate,
+and a sampled one is a different, wider curve.
+
+The generated script writes out the helper it uses, so it depends on
+`survival` and `data.table` but not on `ggstratify`:
+
+```{r, eval = FALSE}
+km <- km_data(d, "fu_days", "death", by = c("treatment"))
+
+p <- ggplot(km, aes(x = .time, y = .surv, colour = treatment)) +
+  geom_step(linewidth = 0.8) +
+  geom_point(data = function(x) x[x$.ncens > 0, ], shape = 3, size = 2,
+             show.legend = FALSE) +
+  coord_cartesian(ylim = c(0, 1)) +
+  labs(x = "Time", y = "Survival probability") +
+  theme_bw()
+```
+
+## Looking at part of an axis
+
+One outlier at 400 days flattens every box in the figure. **Appearance** takes
+a range for each axis — **X axis from / to** and **Y axis from / to** — and
+either end of either range can be left blank for "as far as the data goes".
+
+The range zooms the figure; it does not filter it:
+
+```{r, eval = FALSE}
+p <- ggplot(d, aes(x = treatment, y = los_days)) +
+  geom_boxplot(alpha = 0.6, outlier.shape = 19) +
+  coord_cartesian(ylim = c(0, 30)) +
+  theme_bw()
+```
+
+`coord_cartesian()` is the whole point of the layer. `ylim(0, 30)` or a scale
+limit would drop the rows outside the range *before* the boxplot was computed,
+which moves the median and the whiskers of what you are shown; the description
+would then be of 96% of the data while the tab still said `N = 500`. Zooming
+leaves the summary alone and looks at part of it.
+
+A range typed here also replaces a survival curve's **Y axis from 0 to 1**,
+and a Kaplan-Meier x range is passed to the number-at-risk table too, so the
+counts stay under the piece of the curve on screen.
+
+## The generated code
+
+The **R-code** tab shows the `ggplot2` code for the figure you are looking at,
+and nothing else. There is no export loop and no `ggsave()` call: writing the
+files is what the **Export all figures** button is for, and a script that also
+did it would bury the few lines you actually want to lift into your own
+analysis.
+
+What is there is everything the figure genuinely needs, in the order it has to
+run: the categorized columns, the exclusion of rows that cannot be placed in a
+panel, the subset that makes this figure the stratum it is, and any helper the
+figure defines for itself.
+
+```{r, eval = FALSE}
+# ---------------------------------------------------------------------
+# Generated by ggstratify
+# The ggplot2 code for the figure shown on the Plot tab.
+# Figure: sex: Male (N = 291)
+# ---------------------------------------------------------------------
+library(data.table)
+library(ggplot2)
+
+dt <- as.data.table(epi_cohort)   # <- your data
+
+# Rows with no value for a layer variable cannot be placed in a panel or
+# a figure, so they are excluded here -- once, before anything is counted.
+layer_vars <- c("sex", "severity")
+for (v in layer_vars) {
+  n_na <- sum(is.na(dt[[v]]))
+  if (n_na > 0L) {
+    message("Excluded ", n_na, " row(s) with a missing ", v, ".")
+  }
+  dt <- dt[!is.na(dt[[v]])]
+}
+
+# The rows this figure is drawn from: sex = Male.
+d <- dt[as.character(sex) == "Male"]
+
+add_facet_n <- function(d, var) {
+  d <- data.table::copy(data.table::as.data.table(d))
+  v <- as.character(d[[var]])
+  lv <- if (is.factor(d[[var]])) levels(d[[var]]) else sort(unique(v))
+  sizes <- as.integer(table(factor(v, levels = lv)))
+  strips <- sprintf("%s (N = %d)", lv, sizes)
+  d[, .facet_label := factor(strips[match(v, lv)], levels = strips)]
+  d[]
+}
+
+d <- add_facet_n(d, "severity")
+
+p <- ggplot(d, aes(x = treatment, y = los_days)) +
+  geom_boxplot(alpha = 0.6, outlier.shape = 19) +
+  facet_wrap(~ .facet_label) +
+  labs(title = "sex_Male (N = 291)") +
+  theme_bw()
+
+p
+```
+
+When several figures are shown at once, the header says which one the code is
+for; the **Which figure** selector chooses it.
+
+## Writing the files
+
+**Export all figures** writes every stratum the Strata tab lists, into the
+output folder, using the file names that tab shows. Two formats are offered:
+
+* **PNG**, drawn through `ragg`, at the width, height and resolution you set.
+* **SVG**, a vector format: it stays sharp at any size and can be opened in
+  Illustrator or Inkscape afterwards, which is what a journal usually asks
+  for. Written through `svglite` when that is installed, and otherwise through
+  the cairo device that ships with R.
+
+### Why the code always matches the figure
+
+The preview, the **Export all figures** button and the **R-code** tab all
+evaluate output from the same code generator. There is no separate "drawing"
+path that could drift away from the "code" path, so the code you copy
+reproduces exactly what you were looking at.
+
+## Speed
+
+Data handling is `data.table` throughout, which is the reason the app stays
+usable on data that a `dplyr`-based GUI would struggle with. On two million
+rows and eight columns: the variable scan takes about a second and happens
+once, a single-stratum preview takes a third of a second, and an
+eighteen-panel preview takes about three seconds.
+
+Two mechanisms do most of that work. Only the columns a figure actually reads
+are extracted before plotting, and previews of very large data are drawn from
+a sample — taken *within* each stratum so that small strata keep all their
+rows, and one whole subject at a time when a line plot has an ID.
+
+The caps are deliberately high: one million rows for scatter and line plots,
+where every row becomes its own mark, ten million for the types that summarise
+their rows before drawing anything, and never for survival curves. Sampling is
+the one place where the preview stops matching the data, so it should be
+reached by data that genuinely will not draw rather than by data that is
+merely large — a cohort of a million rows draws its own boxplot, and gets to.
+Sampling affects the preview only in any case: exported figures and the
+generated code always use every row, and the app says so on screen whenever
+sampling is active.
+
+## One function
+
+There is one exported function, `ggstratify()`, and no modes to choose
+between. Add no layers and you have the single-figure explorer —
+the equivalent of `ggplotgui::ggplot_shiny()`, with the same figure types,
+themes and palettes, plus the survival curve and the line plot. Add layers
+and the same app describes them.
+
+Nor is there a preview mode to choose. Whether the figures are shown all at
+once as panels or one at a time follows from the variables: the switch
+appears only when the figures are split and no variable has claimed the
+panels, which are the conditions under which both answers exist.
+
+It is an independent implementation, not a wrapper: `ggstratify` does not
+depend on `ggplotgui` and contains none of its code. It is nevertheless
+released under GPL-3, the licence of the package whose figure types it
+follows.

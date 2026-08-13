@@ -8,7 +8,7 @@ ggstratify(your_data)
 
 That is the only function you need to remember.
 
-![Figure 1](readme_figure.png)
+![ggstratify demo](man/figures/demo.gif)
 
 ## Overview
 
@@ -74,7 +74,7 @@ ggstratify(iris)                 # data.frame / tibble / data.table / matrix
 
 ## Acknowledgements
 
-- Claude Code (Anthropic's Claude Opus 5) assisted with testing and
+- Claude Code (Anthropic's Claude Opus 5) assisted with adding notes, testing and
   English-language proofreading. The design, decisions and final
   responsibility remain the author's.
 - The package design was inspired by

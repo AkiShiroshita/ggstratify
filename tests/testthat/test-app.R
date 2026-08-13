@@ -7,9 +7,23 @@ test_that("gs_downsample leaves small data alone", {
   expect_identical(gs_downsample(d, box_spec, TRUE), d)
 })
 
+# The real caps are in the millions of rows, so the sampling *rules* are tested
+# against a small threshold passed in, and the caps themselves are tested as
+# the numbers they are. Building a table of the real cap's size to watch it be
+# halved would cost more memory than the check machine is promised.
+CAP <- 500L
+
 test_that("gs_downsample is a no-op when the user switches it off", {
-  d <- data.table::data.table(x = rnorm(GS_SAMPLE_SCATTER + 100))
-  expect_identical(gs_downsample(d, scatter_spec, FALSE), d)
+  d <- data.table::data.table(x = rnorm(CAP + 100L))
+  expect_identical(gs_downsample(d, scatter_spec, FALSE, threshold = CAP), d)
+})
+
+test_that("the caps are large enough that ordinary data is never sampled", {
+  # Sampling is the one place where the preview stops matching the data, so it
+  # has to be reached by data that will not draw, not by data that is merely
+  # large. A cohort of a million rows draws its own boxplot.
+  expect_gte(gs_sample_threshold(scatter_spec), 1e6)
+  expect_gte(gs_sample_threshold(box_spec), 1e7)
 })
 
 test_that("scatter is capped harder than the other plot types", {
@@ -18,39 +32,40 @@ test_that("scatter is capped harder than the other plot types", {
   expect_equal(gs_sample_threshold(gs_spec(plot_type = GS_LINE)),
                gs_sample_threshold(scatter_spec))
 
-  d <- data.table::data.table(x = rnorm(GS_SAMPLE_SCATTER * 2))
-  expect_equal(nrow(gs_downsample(d, scatter_spec, TRUE)), GS_SAMPLE_SCATTER)
-  # The same data is under the cap for a boxplot, so it is left whole.
+  d <- data.table::data.table(x = rnorm(CAP * 2L))
+  expect_equal(nrow(gs_downsample(d, scatter_spec, TRUE, threshold = CAP)), CAP)
+  # The same data is under the real cap for either type, so it is left whole.
+  expect_equal(nrow(gs_downsample(d, scatter_spec, TRUE)), nrow(d))
   expect_equal(nrow(gs_downsample(d, box_spec, TRUE)), nrow(d))
 })
 
 test_that("a sampled line plot keeps whole trajectories", {
   # Half a trajectory is a line nobody has, so subjects are sampled, not rows.
   per_id <- 4L
-  n_id <- GS_SAMPLE_SCATTER            # 4x the cap, in rows
+  n_id <- CAP                          # 4x the cap, in rows
   d <- data.table::data.table(
     id = rep(sprintf("P%05d", seq_len(n_id)), each = per_id),
     visit = rep(seq_len(per_id), times = n_id),
     crp = rnorm(n_id * per_id)
   )
   spec <- gs_spec(plot_type = GS_LINE, x = "visit", y = "crp", id = "id")
-  out <- gs_downsample(d, spec, TRUE)
+  out <- gs_downsample(d, spec, TRUE, threshold = CAP)
 
-  expect_lte(nrow(out), GS_SAMPLE_SCATTER)
+  expect_lte(nrow(out), CAP)
   expect_gt(nrow(out), 0L)
   # Every ID that survived kept all of its visits.
   expect_true(all(out[, .N, by = id]$N == per_id))
 })
 
 test_that("group-wise sampling keeps small strata intact", {
-  n <- GS_SAMPLE_OTHER + 1000L
+  n <- CAP + 1000L
   d <- data.table::data.table(
     y = rnorm(n),
     .strat_label = c(rep("g: huge", n - 20L), rep("g: tiny", 20L))
   )
-  out <- gs_downsample(d, box_spec, TRUE, by = ".strat_label")
+  out <- gs_downsample(d, box_spec, TRUE, by = ".strat_label", threshold = CAP)
 
-  expect_lte(nrow(out), GS_SAMPLE_OTHER)
+  expect_lte(nrow(out), CAP)
   # Every stratum survives, and the tiny one is not thinned at all.
   expect_setequal(unique(out$.strat_label), c("g: huge", "g: tiny"))
   expect_equal(nrow(out[.strat_label == "g: tiny"]), 20L)
@@ -670,7 +685,7 @@ test_that("rows missing a layer variable are excluded and counted", {
 
 test_that("the UI builds and carries every control the server reads", {
   # as.character() renders the tags without pulling in htmltools by name.
-  ui <- as.character(gs_ui(has_data = TRUE))
+  ui <- as.character(gs_ui())
   for (id in c("plot_type", "yvar", "xvar", "group", "timevar", "eventvar",
                "km_ci", "km_risk", "idvar", "line_points", "smooth",
                "smooth_span", "smooth_se", "cut_var", "cut_method", "add_cut",

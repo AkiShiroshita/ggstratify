@@ -6,52 +6,29 @@
 #' Coerce an input into a standalone data.table
 #'
 #' Accepts anything that inherits from data.frame (tibble and data.table
-#' included), a matrix, or a path to a delimited or `.rds` file. Subclasses
-#' are dropped: the result is always a fresh plain `data.table` that shares no
-#' columns with the caller's object, so the app can add helper columns by
-#' reference without mutating the user's data.
+#' included) or a matrix. Subclasses are dropped: the result is always a fresh
+#' plain `data.table` that shares no columns with the caller's object, so the
+#' app can add helper columns by reference without mutating the user's data.
 #'
-#' @param x A data.frame-like object or a file path.
+#' A file path is deliberately not accepted. Reading a file here would set
+#' every column's type by guess, and the app would then describe the data on
+#' those guesses -- see the *Before you start* section of [ggstratify()].
+#'
+#' @param x A data.frame-like object or a matrix.
 #' @return A `data.table`.
 #' @keywords internal
 #' @noRd
 gs_prepare_data <- function(x) {
-  if (is.character(x) && length(x) == 1L) {
-    return(gs_read_file(x))
-  }
   if (is.matrix(x)) {
     x <- as.data.frame(x, stringsAsFactors = FALSE)
   }
   if (!is.data.frame(x)) {
-    stop("`dataset` must be a data.frame, a matrix or a path to a data file.",
-         call. = FALSE)
+    stop("`dataset` must be a data.frame or a matrix, already read into the ",
+         "session with the column types you mean it to have.", call. = FALSE)
   }
   # copy() first: as.data.table()/setDT() on a data.table would otherwise let
   # later `:=` calls write straight into the caller's object.
   dt <- data.table::as.data.table(data.table::copy(x))
-  gs_clean_names(dt)
-}
-
-#' Read a data file into a data.table
-#' @keywords internal
-#' @noRd
-gs_read_file <- function(path) {
-  if (!file.exists(path)) {
-    stop("File not found: ", path, call. = FALSE)
-  }
-  ext <- tolower(tools::file_ext(path))
-  dt <- switch(
-    ext,
-    rds = {
-      obj <- readRDS(path)
-      if (!is.data.frame(obj)) {
-        stop("The .rds file does not contain a data.frame.", call. = FALSE)
-      }
-      data.table::as.data.table(data.table::copy(obj))
-    },
-    # fread auto-detects the separator for csv/tsv/txt and anything else.
-    data.table::fread(path, stringsAsFactors = FALSE, data.table = TRUE)
-  )
   gs_clean_names(dt)
 }
 

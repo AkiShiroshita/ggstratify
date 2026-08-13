@@ -4,14 +4,16 @@
 \alias{ggstratify}
 \title{Describe a data set, one layer at a time}
 \usage{
-ggstratify(dataset = NULL, launch.browser = TRUE, ...)
+ggstratify(dataset, launch.browser = TRUE, ...)
 }
 \arguments{
-\item{dataset}{A data frame -- including a \code{tibble} or a \code{data.table} -- a
-matrix, or a path to a \code{.csv}, \code{.tsv}, \code{.txt} or \code{.rds} file. Whatever it
-is given becomes a plain \code{data.table}, so a grouped \code{tibble} is described
-as its rows, not as its groups. When \code{NULL} the app starts with a file
-upload control. The object is copied, never modified in place.}
+\item{dataset}{The data to describe, and the one thing the function needs:
+a data frame -- including a \code{tibble} or a \code{data.table} -- or a matrix,
+already read into your session and already of the types you mean. A file
+path is not accepted; see \emph{Before you start}. Whatever it is given becomes
+a plain \code{data.table}, so a grouped \code{tibble} is described as its rows, not
+as its groups. The object is copied, never modified in place, and its name
+is what the generated code refers to it by.}
 
 \item{launch.browser}{Passed to \code{\link[shiny:runApp]{shiny::runApp()}}. \code{TRUE} opens the system
 browser.}
@@ -97,6 +99,21 @@ measurements, \code{factor} for groups, with the levels in the order you want
 them read -- before passing the data. \code{ggstratify} describes what it is
 given; it does not guess what you meant. A grouping variable stored as
 \verb{1, 2, 3} will be described as a number.
+
+This is why the data must be an object you already have in your session.
+There is no file to choose from inside the application, and no file path to
+hand it: a data set that arrives by being read from disk arrives with types
+that a reader guessed, and it is then described on those guessed types
+without anyone having looked at them. Read the file yourself, run
+\code{\link[=str]{str()}} or \code{\link[=summary]{summary()}} over the result, fix the types that are wrong, and
+pass that object:
+
+\if{html}{\out{<div class="sourceCode">}}\preformatted{cohort <- read.csv("cohort.csv")
+cohort$treatment <- factor(cohort$treatment,
+                           levels = c("Control", "Low dose", "High dose"))
+str(cohort)
+ggstratify(cohort)
+}\if{html}{\out{</div>}}
 
 The figure types, themes and palettes otherwise match those offered by the
 \pkg{ggplotgui} package. All data handling uses \pkg{data.table}. Figures

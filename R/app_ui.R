@@ -4,10 +4,13 @@
 # pure client-side operation with no server round-trip.
 
 #' Build the ggstratify user interface
-#' @param has_data Whether a data set was passed to the launcher.
+#'
+#' There is no control for loading data. The data set is the argument the
+#' launcher was called with, already read and already typed by the user; see
+#' the *Before you start* section of [ggstratify()].
 #' @keywords internal
 #' @noRd
-gs_ui <- function(has_data = FALSE) {
+gs_ui <- function() {
   bslib::page_sidebar(
     title = "ggstratify",
     # font_scale multiplies Bootstrap's base font size, so every control,
@@ -24,12 +27,6 @@ gs_ui <- function(has_data = FALSE) {
 
         bslib::accordion_panel(
           "Describe",
-          if (!has_data) {
-            shiny::fileInput(
-              "data_file", "Data file (csv / tsv / rds)",
-              accept = c(".csv", ".tsv", ".txt", ".rds")
-            )
-          },
           shiny::selectInput("plot_type", "Type of graph", GS_PLOT_TYPES,
                              selected = "Boxplot"),
           shiny::conditionalPanel(
@@ -57,7 +54,8 @@ gs_ui <- function(has_data = FALSE) {
               "to draw one line per subject instead."
             )
           ),
-          shiny::selectInput("group", "Group (or colour)", choices = NULL)
+          shiny::selectInput("group", "Group (colour by this variable)",
+                             choices = NULL)
         ),
 
         bslib::accordion_panel(
@@ -91,11 +89,14 @@ gs_ui <- function(has_data = FALSE) {
         bslib::accordion_panel(
           "Layers",
           shiny::helpText(
-            "Decide where each extra variable goes. Leave both boxes empty",
-            "and you get one plain figure. A variable put in Panels is drawn",
-            "as several small plots side by side inside a single figure. A",
-            "variable ticked under Separate figures gets a figure of its own",
-            "instead: one file per level. The same variable cannot do both."
+            "Choose how to split your figure using additional variables.",
+            "Leave both boxes empty: create one figure with all data.",
+            "Panels: show multiple small plots within one figure, one for",
+            "each level of the variable.",
+            "Separate figures: create a separate figure for each level of",
+            "the variable.",
+            "A variable can be used in either Panels or Separate figures,",
+            "but not both."
           ),
           shiny::selectInput("facet", "Panels side by side in one figure",
                              choices = GS_NONE),
@@ -108,14 +109,18 @@ gs_ui <- function(has_data = FALSE) {
                                 selected = "independent")
           ),
           shiny::uiOutput("layer_summary"),
-          shiny::numericInput("min_n", "Minimum N per figure",
+          shiny::numericInput("min_n", "Minimum rows per separate figure",
                               value = 10, min = 0, step = 1),
+          shiny::helpText(
+            "No separate figure is created for a group with fewer rows than",
+            "this number. Set to 0 to include every non-empty group."
+          ),
           shiny::checkboxInput("show_n",
                                "Show N in the title and on the panel strips",
                                TRUE),
           shiny::helpText(
             "Every figure says how many observations it was drawn from, and",
-            "so does every panel inside it",
+            "so does every panel inside it.",
             "A stratum with N = 0 (an unused factor level) is always listed",
             "on the Strata tab and never drawn.",
             "Rows missing a layer variable are excluded, and counted"
@@ -179,8 +184,16 @@ gs_ui <- function(has_data = FALSE) {
                              min = 0.1, max = 1, value = 0.6, step = 0.05),
           shiny::checkboxInput(
             "sample_big",
-            "Subsample large data for the preview (the export uses all rows)",
+            "Speed up previews of very large datasets",
             TRUE
+          ),
+          shiny::helpText(
+            "For the on-screen preview only, randomly use a subset of rows",
+            "when there are more than 1,000,000 rows for Scatter and Line",
+            "plots, or more than 10,000,000 rows for other plot types.",
+            "This does not remove groups or change which figures are made.",
+            "Exports and generated code always use all rows. Kaplan-Meier",
+            "curves are never sampled."
           )
         ),
 

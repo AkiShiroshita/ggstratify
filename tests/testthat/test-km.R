@@ -120,9 +120,12 @@ test_that("a curve is never drawn from a subsample", {
   # Sampling a distribution keeps its shape; sampling a survival curve makes
   # a different, wider curve.
   expect_equal(gs_sample_threshold(km_spec()), Inf)
-  d <- data.table::data.table(t = runif(GS_SAMPLE_OTHER + 10L),
-                              e = rbinom(GS_SAMPLE_OTHER + 10L, 1, 0.5))
+  # An infinite cap is not reached by any table, so a small one shows it: the
+  # threshold gs_downsample() takes by default is the spec's, and it is Inf.
+  n <- 1000L
+  d <- data.table::data.table(t = runif(n), e = rbinom(n, 1, 0.5))
   expect_identical(gs_downsample(d, km_spec(), TRUE), d)
+  expect_lt(nrow(gs_downsample(d, km_spec(), TRUE, threshold = 100L)), n)
 })
 
 test_that("validation reports what a curve is missing", {
