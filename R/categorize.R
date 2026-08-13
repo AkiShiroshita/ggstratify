@@ -6,9 +6,9 @@
 # data the app is holding. The derived column in the app is therefore always
 # the column the generated script produces.
 
-#' Build one categorisation rule with defaults filled in
+#' Build one categorization rule with defaults filled in
 #'
-#' @param var Name of the continuous column to categorise.
+#' @param var Name of the continuous column to categorize.
 #' @param new Name of the derived column. Defaults to `<var>_cat`.
 #' @param method One of `"quantile"` (equal-sized groups), `"equal"`
 #'   (equal-width bins) or `"breaks"` (user-supplied cut points).
@@ -161,7 +161,7 @@ gs_check_cut <- function(dt, cut) {
   problems <- character()
   if (!is.numeric(dt[[cut$var]])) {
     problems <- c(problems, sprintf(
-      "'%s' is not numeric; only continuous variables can be categorised.",
+      "'%s' is not numeric; only continuous variables can be categorized.",
       cut$var))
   }
   if (!nzchar(cut$new)) {
@@ -184,7 +184,7 @@ gs_check_cut <- function(dt, cut) {
   err <- attr(trial, "gs_cut_error")
   if (length(err)) return(err)
   if (!cut$new %in% names(trial)) {
-    return(sprintf("'%s' could not be categorised this way.", cut$var))
+    return(sprintf("'%s' could not be categorized this way.", cut$var))
   }
   used <- sum(table(trial[[cut$new]]) > 0L)
   if (used < 2L) {

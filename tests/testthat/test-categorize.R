@@ -21,7 +21,7 @@ test_that("cut points are read from what the user typed", {
   expect_true(anyNA(gs_parse_breaks("50, abc")))
 })
 
-test_that("each method produces the categorisation it promises", {
+test_that("each method produces the categorization it promises", {
   dt <- cohort()
   out <- gs_apply_cuts(dt, list(
     gs_cut("age", method = "quantile", n = 4),
@@ -38,7 +38,7 @@ test_that("each method produces the categorisation it promises", {
   expect_equal(sum(out$age65 == "(-Inf,65]"), sum(dt$age <= 65))
 })
 
-test_that("categorising never touches the data it was given", {
+test_that("categorizing never touches the data it was given", {
   dt <- cohort()
   before <- names(dt)
   out <- gs_apply_cuts(dt, list(gs_cut("age")))

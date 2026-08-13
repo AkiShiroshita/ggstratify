@@ -8,6 +8,8 @@ ggstratify(your_data)
 
 That is the only function you need to remember.
 
+![Figure 1](readme_figure.png)
+
 ## Overview
 
 Descriptive analysis is essential in every research study. Humans (not AI) need to understand the data before making decisions, such as choosing an appropriate statistical model.
