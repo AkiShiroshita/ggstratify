@@ -82,7 +82,7 @@ gs_spec <- function(...) {
     facet       = "",             # the facet_wrap layer: one figure, many panels
     strat_vars  = character(),    # the outer layers: one figure each
     strat_mode  = "independent",  # "independent" | "crossed"
-    cuts        = list(),         # categorised continuous variables
+    cuts        = list(),         # categorized continuous variables
     min_n       = 10L,
     show_n      = TRUE,
     jitter      = FALSE,
@@ -97,6 +97,12 @@ gs_spec <- function(...) {
     km_censor   = TRUE,
     km_ylim     = TRUE,
     km_risk     = FALSE,          # the number-at-risk table under the curve
+    # The axis ranges, as they were typed. NA at either end is "as far as the
+    # data goes", which is what ggplot2 does when it is left to decide.
+    xlim_min    = NA_real_,
+    xlim_max    = NA_real_,
+    ylim_min    = NA_real_,
+    ylim_max    = NA_real_,
     theme       = "theme_bw()",
     palette     = "",
     title       = "",
@@ -232,6 +238,11 @@ gs_spec_from_input <- function(input) {
     km_censor  = !identical(input$km_censor, FALSE),
     km_ylim    = !identical(input$km_ylim, FALSE),
     km_risk    = isTRUE(input$km_risk),
+    # An empty box is NA, which is the "let ggplot2 decide" the default is.
+    xlim_min   = gs_num(input$xlim_min),
+    xlim_max   = gs_num(input$xlim_max),
+    ylim_min   = gs_num(input$ylim_min),
+    ylim_max   = gs_num(input$ylim_max),
     theme      = input$theme %||% "theme_bw()",
     palette    = none(input$palette),
     title      = input$title %||% "",
@@ -272,7 +283,7 @@ gs_validate_spec <- function(spec, info = NULL) {
   type <- spec$plot_type
 
   # A selected variable can vanish under the app's feet: removing a
-  # categorisation removes its column. Saying so beats letting the plot code
+  # categorization removes its column. Saying so beats letting the plot code
   # fail on a missing object, and nothing else is worth reporting until the
   # selection is valid again.
   if (!is.null(info) && nrow(info)) {

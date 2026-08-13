@@ -96,6 +96,24 @@ test_that("the y axis is clamped to 0-1 unless that is switched off", {
   expect_false(grepl("coord_cartesian",
                      paste(gs_code_plot(km_spec(km_ylim = FALSE)), collapse = "\n"),
                      fixed = TRUE))
+
+  # 0 to 1 is a default, and a range typed into the sidebar replaces it.
+  typed <- paste(gs_code_plot(km_spec(ylim_min = 0.5)), collapse = "\n")
+  expect_match(typed, "coord_cartesian(ylim = c(0.5, NA))", fixed = TRUE)
+  expect_false(grepl("ylim = c(0, 1)", typed, fixed = TRUE))
+})
+
+test_that("the risk table is counted across the range the curve is shown over", {
+  code <- paste(gs_code_figure(km_spec(km_risk = TRUE, xlim_max = 60), "d"),
+                collapse = "\n")
+  expect_match(code, "risk_max <- 60", fixed = TRUE)
+  expect_match(code, "risk_min <- 0", fixed = TRUE)
+  # The shared scale already carries the range, so the curve does not repeat
+  # it as a coord_cartesian() the table would not have.
+  expect_false(grepl("xlim = ", code, fixed = TRUE))
+
+  auto <- paste(gs_code_figure(km_spec(km_risk = TRUE), "d"), collapse = "\n")
+  expect_match(auto, "risk_max <- max(km$.time, na.rm = TRUE)", fixed = TRUE)
 })
 
 test_that("a curve is never drawn from a subsample", {
@@ -194,8 +212,9 @@ test_that("the risk table is counted at the times the curve is labelled at", {
   # One set of breaks, given to both panels: a count under the wrong point of
   # the curve is worse than no count at all.
   expect_equal(
-    length(gregexpr("scale_x_continuous(limits = c(0, risk_max), breaks = risk_times)",
-                    code, fixed = TRUE)[[1]]), 2L)
+    length(gregexpr(
+      "scale_x_continuous(limits = c(risk_min, risk_max), breaks = risk_times)",
+      code, fixed = TRUE)[[1]]), 2L)
   # The curve drops the axis the table underneath carries for both.
   expect_match(code, "axis.text.x = element_blank()", fixed = TRUE)
   expect_match(code, "patchwork::wrap_plots(p, tbl", fixed = TRUE)

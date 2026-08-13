@@ -186,7 +186,7 @@ gs_selector_choices <- function(info) {
     # survival::Surv() needs a numeric time and a two-valued event indicator.
     timevar = gs_vars_of(info, "numeric"),
     eventvar = gs_vars_of(info, "event"),
-    # Categorising a variable that is already categorical would do nothing.
+    # Categorizing a variable that is already categorical would do nothing.
     cut_var = continuous
   )
   lapply(out, function(x) c(GS_NONE, x))
@@ -425,7 +425,7 @@ gs_long_strata <- function(dt, strat_vars, plot_cols, min_n = 0L,
   dt <- dt[gs_complete_layers(dt, strat_vars)]
 
   # Panels appear in the order the Strata tab lists them. Sorting the labels
-  # as text would be wrong for a categorised variable: "[0.5,3.9]" sorts after
+  # as text would be wrong for a categorized variable: "[0.5,3.9]" sorts after
   # "(3.9,8.13]".
   panel_order <- gs_strata_table(dt, strat_vars, 0L, mode)$label
 

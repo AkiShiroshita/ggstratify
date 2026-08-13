@@ -14,7 +14,7 @@
 #' clinical conclusion.
 #'
 #' `fu_days` and `death` make the data usable for a Kaplan-Meier curve, and
-#' `age` for the categorisation controls.
+#' `age` for the categorization controls.
 #'
 #' @format A data frame with 600 rows and 11 columns:
 #' \describe{

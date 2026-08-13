@@ -11,7 +11,7 @@ gs_server <- function(dataset = NULL) {
   function(input, output, session) {
 
     raw <- shiny::reactiveVal(NULL)
-    # Categorisation rules, in the order the user added them.
+    # Categorization rules, in the order the user added them.
     cuts <- shiny::reactiveVal(list())
     # Bumped whenever the data changes; part of the plot cache key so that a
     # new data set never shows a cached plot from the old one.
@@ -34,7 +34,7 @@ gs_server <- function(dataset = NULL) {
       if (is.null(dt)) list() else gs_valid_cuts(cuts(), names(dt))
     })
 
-    # What the whole app works on: the loaded table plus the categorised
+    # What the whole app works on: the loaded table plus the categorized
     # columns. They are built by evaluating the very lines the R-code tab
     # shows, so the app and the script cannot disagree about them.
     dat <- shiny::reactive({
@@ -43,7 +43,7 @@ gs_server <- function(dataset = NULL) {
       gs_apply_cuts(dt, cuts_used())
     })
 
-    # Re-derived whenever a categorised column appears or disappears.
+    # Re-derived whenever a categorized column appears or disappears.
     info <- shiny::reactive({
       dt <- dat()
       if (is.null(dt)) NULL else gs_classify_vars(dt)
@@ -72,7 +72,7 @@ gs_server <- function(dataset = NULL) {
 
     # --- populate the selectors once per data set ----------------------------
 
-    # Adding a categorised variable repopulates every selector, so a selector
+    # Adding a categorized variable repopulates every selector, so a selector
     # keeps what the user picked whenever that choice still exists. Only a
     # selection that has become impossible falls back to "(none)", which is
     # also where every selector starts -- see gs_selector_choices().
@@ -96,7 +96,7 @@ gs_server <- function(dataset = NULL) {
                              gs_vars_of(nfo, "stratify")))
     })
 
-    # --- categorising --------------------------------------------------------
+    # --- categorizing --------------------------------------------------------
 
     # A name that does not collide with the data, refreshed as the source
     # variable changes but never overwriting something the user typed.
@@ -121,7 +121,7 @@ gs_server <- function(dataset = NULL) {
       }
       shiny::req(input$cut_var)
       if (identical(input$cut_var, GS_NONE)) {
-        shiny::showNotification("Choose the continuous variable to categorise.",
+        shiny::showNotification("Choose the continuous variable to categorize.",
                                 type = "warning")
         return()
       }
@@ -159,12 +159,12 @@ gs_server <- function(dataset = NULL) {
     output$cuts_list <- shiny::renderUI({
       cs <- cuts_used()
       if (!length(cs)) {
-        return(shiny::helpText("No categorised variables yet."))
+        return(shiny::helpText("No categorized variables yet."))
       }
       labels <- vapply(cs, gs_cut_describe, character(1L))
       shiny::div(
         class = "mt-3",
-        shiny::selectInput("cut_remove", "Categorised variables",
+        shiny::selectInput("cut_remove", "Categorized variables",
                            choices = stats::setNames(seq_along(cs), labels)),
         shiny::actionButton("remove_cut", "Remove", class = "btn-outline-danger btn-sm",
                             icon = shiny::icon("trash"))
@@ -176,7 +176,7 @@ gs_server <- function(dataset = NULL) {
     spec_r <- shiny::debounce(
       shiny::reactive({
         spec <- gs_spec_from_input(input)
-        # The categorisation rules are held outside the inputs, because they
+        # The categorization rules are held outside the inputs, because they
         # accumulate rather than being read off a control.
         spec$cuts <- cuts_used()
         # Which palette scale the group needs is a property of the data, not
@@ -184,7 +184,7 @@ gs_server <- function(dataset = NULL) {
         nfo <- info()
         spec$group_continuous <- nzchar(spec$group) && !is.null(nfo) &&
           spec$group %in% gs_vars_of(nfo, "continuous")
-        # Removing a categorisation removes its column, and the browser takes
+        # Removing a categorization removes its column, and the browser takes
         # a round trip to notice. Until it does, the ticked variable would
         # otherwise reach the generated script, which would then not run.
         dt <- dat()
@@ -248,10 +248,29 @@ gs_server <- function(dataset = NULL) {
       gs_strata_table(dt, spec$strat_vars, spec$min_n, spec$strat_mode)
     })
 
+    # updateSelectInput() moves the box back to its first choice, and strata()
+    # is invalidated by every control in the sidebar -- an opacity, a theme --
+    # not only by the ones that decide which figures there are. Pushing the
+    # list unconditionally would therefore send the preview back to the first
+    # figure whenever anything at all was adjusted. So it is pushed only when
+    # it is a different list, and the figure on screen is followed to its new
+    # position rather than dropped: it is the same figure, further down.
+    shown_strata <- NULL
     shiny::observeEvent(strata(), {
       st <- strata()[keep == TRUE]
-      choices <- if (nrow(st)) stats::setNames(seq_len(nrow(st)), st$label) else character()
-      shiny::updateSelectInput(session, "preview_stratum", choices = choices)
+      choices <- if (nrow(st)) {
+        stats::setNames(as.character(seq_len(nrow(st))), st$label)
+      } else {
+        character()
+      }
+      if (identical(choices, shown_strata)) return()
+      shown <- names(shown_strata)[match(input$preview_stratum, shown_strata)]
+      shown_strata <<- choices
+      keep_showing <- length(shown) == 1L && !is.na(shown) &&
+        shown %in% names(choices)
+      shiny::updateSelectInput(
+        session, "preview_stratum", choices = choices,
+        selected = if (keep_showing) choices[[shown]] else NULL)
     })
 
     # The one figure the app is currently talking about: the one the preview
@@ -281,8 +300,14 @@ gs_server <- function(dataset = NULL) {
     # every figure at once as soon as that becomes possible, one at a time as
     # soon as it stops being. The switch is hidden in the second case, which
     # is why this needs no note on screen. A choice the user makes while both
-    # modes are open is left alone -- this fires only when the answer changes.
+    # modes are open is left alone, which is what the comparison is for:
+    # observeEvent() fires whenever its expression is invalidated, and
+    # preview_choice() reads the spec, so without it every change of opacity
+    # would push the preview back to showing all the figures at once.
+    shown_choice <- NULL
     shiny::observeEvent(preview_choice(), {
+      if (identical(preview_choice(), shown_choice)) return()
+      shown_choice <<- preview_choice()
       shiny::updateRadioButtons(
         session, "preview_mode",
         selected = if (preview_choice()) "facet" else "single")

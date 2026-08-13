@@ -54,7 +54,6 @@ library(ggstratify)
 
 ggstratify(epi_cohort)           # the example data that ships with the package
 ggstratify(iris)                 # data.frame / data.table / matrix
-ggstratify("data/cohort.csv")    # or a path: csv / tsv / txt / rds
 ggstratify()                     # no argument: upload inside the app
 ```
 
@@ -70,13 +69,14 @@ ggstratify()                     # no argument: upload inside the app
 ## Figure types
 
 `Boxplot` / `Density` / `Dot + Error` / `Dotplot` / `Histogram` /
-**`Kaplan-Meier curve`** / **`Line`** / `Scatter` / `Violin`
+`Kaplan-Meier curve` / `Line` / `Scatter` / `Violin`
 
 ## Acknowledgements
 
-- Claude Code assisted with testing and English-language proofreading. The
-  design, decisions and final responsibility remain the author's.
-- The figure types, themes and palettes follow
+- Claude Code (Anthropic's Claude Opus 5) assisted with testing and
+  English-language proofreading. The design, decisions and final
+  responsibility remain the author's.
+- The package design was inspired by
   [ggplotgui](https://github.com/gertstulp/ggplotgui/) (Gert Stulp, GPL-3).
 
 ## License

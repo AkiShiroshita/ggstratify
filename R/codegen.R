@@ -61,15 +61,17 @@ GS_FACET_COL <- ".facet_label"
 # out as text rather than exported so that the generated code stands on its own.
 GS_FACET_N_HELPER <- c(
   "# A panel that does not say how many observations it holds invites the",
-  "# reader to compare shapes drawn from 300 rows and from 8. add_facet_n()",
-  "# writes the size into the strip label, keeping the level order intact so",
-  "# that the panels stay in the order the factor declares.",
+  "# reader to compare shapes drawn from 300 rows and from 8, and a strip",
+  "# reading \"[18,53]\" does not say what the range is a range of.",
+  "# add_facet_n() writes the variable and the size into the strip label,",
+  "# keeping the level order intact so that the panels stay in the order the",
+  "# factor declares.",
   "add_facet_n <- function(d, var) {",
   "  d <- data.table::copy(data.table::as.data.table(d))",
   "  v <- as.character(d[[var]])",
   "  lv <- if (is.factor(d[[var]])) levels(d[[var]]) else sort(unique(v))",
   "  sizes <- as.integer(table(factor(v, levels = lv)))",
-  "  strips <- sprintf(\"%s (N = %d)\", lv, sizes)",
+  "  strips <- sprintf(\"%s: %s (N = %d)\", var, lv, sizes)",
   sprintf("  d[, %s := factor(strips[match(v, lv)], levels = strips)]",
           GS_FACET_COL),
   "  d[]",
@@ -96,9 +98,9 @@ gs_facet_col <- function(spec, facet_strata = FALSE) {
   if (isTRUE(spec$show_n)) GS_FACET_COL else spec$facet
 }
 
-# --- categorised variables ---------------------------------------------------
+# --- categorized variables ---------------------------------------------------
 
-#' The `cut()` expression for one categorisation rule
+#' The `cut()` expression for one categorization rule
 #' @keywords internal
 #' @noRd
 gs_cut_expr <- function(cut) {
@@ -125,7 +127,7 @@ gs_code_cut_line <- function(cut, data_sym = "dt") {
 
 #' The block that adds every derived column, or `character(0)`
 #'
-#' Emitted once, straight after the data is loaded, so that a categorised
+#' Emitted once, straight after the data is loaded, so that a categorized
 #' variable can be used anywhere a real column can -- including as a
 #' stratifying variable.
 #' @keywords internal
@@ -133,7 +135,7 @@ gs_code_cut_line <- function(cut, data_sym = "dt") {
 gs_code_cuts <- function(cuts, data_sym = "dt") {
   cuts <- gs_as_cuts(cuts)
   if (!length(cuts)) return(character())
-  c("# Categorised continuous variables.",
+  c("# Categorized continuous variables.",
     vapply(cuts, gs_code_cut_line, character(1L), data_sym = data_sym),
     "")
 }
@@ -316,7 +318,7 @@ gs_code_plot_block <- function(spec, data_sym = "d", facet_strata = FALSE,
                              shared_x = risk)
   if (!risk) return(assign_to(plot_lines, sym))
 
-  c(gs_code_risk_times(),
+  c(gs_code_risk_times(spec),
     assign_to(plot_lines, "p"),
     "",
     gs_code_risk_table(spec, data_sym, facet_strata),
@@ -338,15 +340,20 @@ GS_RISK_HEIGHT_RATIO <- 3
 #'
 #' Read off the curve rather than chosen by the user, and then given to both
 #' panels, so that a column of the table sits under the point of the curve it
-#' describes.
+#' describes. An x range typed into the sidebar is what the curve is being
+#' looked at through, so the counts are taken across that range instead.
 #' @keywords internal
 #' @noRd
-gs_code_risk_times <- function() {
+gs_code_risk_times <- function(spec) {
+  from <- gs_num(spec$xlim_min)
+  to <- gs_num(spec$xlim_max)
   c("# The curve and the table share these times, so that every count sits",
     "# under the point of the curve it belongs to.",
-    "risk_max <- max(km$.time, na.rm = TRUE)",
-    "risk_times <- pretty(c(0, risk_max), n = 5)",
-    "risk_times <- risk_times[risk_times >= 0 & risk_times <= risk_max]",
+    sprintf("risk_min <- %s", if (is.na(from)) "0" else gs_n(from)),
+    sprintf("risk_max <- %s",
+            if (is.na(to)) "max(km$.time, na.rm = TRUE)" else gs_n(to)),
+    "risk_times <- pretty(c(risk_min, risk_max), n = 5)",
+    "risk_times <- risk_times[risk_times >= risk_min & risk_times <= risk_max]",
     "")
 }
 
@@ -371,7 +378,7 @@ gs_code_risk_table <- function(spec, data_sym = "d", facet_strata = FALSE) {
             gs_dq(spec$time), gs_dq(spec$event), by_arg),
     sprintf("tbl <- ggplot(risk, aes(x = .time, y = %s)) +", y),
     "  geom_text(aes(label = .nrisk), size = 3.4) +",
-    "  scale_x_continuous(limits = c(0, risk_max), breaks = risk_times) +",
+    "  scale_x_continuous(limits = c(risk_min, risk_max), breaks = risk_times) +",
     # A discrete axis puts the first level at the bottom, which would have the
     # rows running against the legend they are read beside.
     "  scale_y_discrete(limits = rev) +")
@@ -443,12 +450,12 @@ gs_code_plot <- function(spec, data_sym = "d", facet_strata = FALSE,
 
   # --- coordinates ---
   if (isTRUE(shared_x)) {
-    lines <- c(lines, gs_indent(
-      "scale_x_continuous(limits = c(0, risk_max), breaks = risk_times) +"))
+    lines <- c(lines, gs_indent(paste(
+      "scale_x_continuous(limits = c(risk_min, risk_max),",
+      "breaks = risk_times) +")))
   }
-  if (type == GS_KM && isTRUE(spec$km_ylim)) {
-    lines <- c(lines, gs_indent("coord_cartesian(ylim = c(0, 1)) +"))
-  }
+  coord <- gs_code_coord(spec, shared_x)
+  if (length(coord)) lines <- c(lines, gs_indent(coord))
 
   # --- facets ---
   facet <- gs_code_facet(spec, facet_strata)
@@ -590,6 +597,43 @@ gs_code_km_geoms <- function(spec, alpha) {
   out
 }
 
+#' The coordinate layer, or character(0) when both axes are left automatic
+#'
+#' `coord_cartesian()` rather than `xlim()` or a scale's `limits`: it zooms
+#' the figure into the range asked for, where a scale limit drops the rows
+#' outside it first -- which moves a boxplot's median, rescales a density and
+#' recounts a histogram. A range is a question about what to look at, not
+#' about which rows the description is of.
+#'
+#' Either end can be left blank on its own: `NA` there is ggplot2's own "as
+#' far as the data goes". A Kaplan-Meier curve's 0-to-1 y axis is a default of
+#' the same kind, so a range typed in replaces it.
+#' @keywords internal
+#' @noRd
+gs_code_coord <- function(spec, shared_x = FALSE) {
+  # With a number-at-risk table the two panels share one x scale, which is
+  # already pinned to the range; see gs_code_risk_times().
+  xlim <- if (isTRUE(shared_x)) "" else gs_range_arg(spec$xlim_min, spec$xlim_max)
+  ylim <- gs_range_arg(spec$ylim_min, spec$ylim_max)
+  if (!nzchar(ylim) && identical(spec$plot_type, GS_KM) && isTRUE(spec$km_ylim)) {
+    ylim <- "c(0, 1)"
+  }
+  parts <- c(if (nzchar(xlim)) sprintf("xlim = %s", xlim),
+             if (nzchar(ylim)) sprintf("ylim = %s", ylim))
+  if (!length(parts)) return(character())
+  sprintf("coord_cartesian(%s) +", paste(parts, collapse = ", "))
+}
+
+#' One axis range as a `c(from, to)` literal, or `""` when both ends are blank
+#' @keywords internal
+#' @noRd
+gs_range_arg <- function(from, to) {
+  from <- gs_num(from)
+  to <- gs_num(to)
+  if (is.na(from) && is.na(to)) return("")
+  sprintf("c(%s, %s)", gs_n(from), gs_n(to))
+}
+
 #' The scale layers, or character(0) when the default palette is in use
 #'
 #' A palette recolours the groups, so it has nothing to act on until a
@@ -617,7 +661,12 @@ gs_code_scales <- function(spec, grp_aes, has_group) {
 #'
 #' The column panelled by is not always the column the user chose: with the
 #' sizes switched on it is the labelled copy `add_facet_n()` writes, so that a
-#' strip reads `Site A (N = 303)` rather than `Site A`.
+#' strip reads `site: Site A (N = 303)` rather than `Site A`.
+#'
+#' A plain column is panelled through `label_both()`, which names the variable
+#' on the strip the way the labelled copy already does. A level is not always
+#' self-explanatory -- a categorized variable's levels are bare ranges, and a
+#' panel headed `[18,53]` does not say what the range is a range of.
 #' @keywords internal
 #' @noRd
 gs_code_facet <- function(spec, facet_strata = FALSE) {
@@ -626,7 +675,10 @@ gs_code_facet <- function(spec, facet_strata = FALSE) {
   if (isTRUE(facet_strata)) {
     return("facet_wrap(~ .strat_label, scales = \"free_x\") +")
   }
-  sprintf("facet_wrap(~ %s) +", gs_bt(col))
+  if (identical(col, GS_FACET_COL)) {
+    return(sprintf("facet_wrap(~ %s) +", gs_bt(col)))
+  }
+  sprintf("facet_wrap(~ %s, labeller = label_both) +", gs_bt(col))
 }
 
 #' The labs() layer, or character(0) when nothing is labelled
@@ -690,7 +742,7 @@ gs_export_prefix <- function(spec) {
 #' take away, edit and put in their own analysis.
 #'
 #' Everything the figure genuinely needs is still here, in the order it has to
-#' run: the categorised columns, the exclusion of rows that cannot be placed in
+#' run: the categorized columns, the exclusion of rows that cannot be placed in
 #' a panel, the subset that makes this figure the stratum it is, and the
 #' helpers a survival curve or a labelled panel strip defines for itself.
 #'
@@ -712,7 +764,7 @@ gs_code_script <- function(spec, stratum = NULL, note = NULL) {
   }
 
   # data.table earns its library() call only when something below is written
-  # in it: a categorisation, the row exclusion, or the subset for this figure.
+  # in it: a categorization, the row exclusion, or the subset for this figure.
   # A plain figure needs none of the three, and is better off as ggplot2 code
   # a reader can lift without taking a dependency with it.
   needs_dt <- length(gs_as_cuts(spec$cuts)) > 0L ||

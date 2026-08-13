@@ -68,6 +68,7 @@ gs_test_inputs <- function(outdir) {
     smooth_span = 0.75,
     facet = GS_NONE, theme = "theme_bw()",
     palette = "", title = "", lab_x = "", lab_y = "", lab_legend = "",
+    xlim_min = NA, xlim_max = NA, ylim_min = NA, ylim_max = NA,
     data_name = "iris", outdir = outdir, prefix = "", width = 7, height = 5,
     dpi = 300, format = "png", preview_mode = "facet", preview_stratum = "1",
     sample_big = TRUE, show_n = TRUE,
@@ -247,6 +248,65 @@ test_that("the chosen variables, not the switch, decide what the preview shows",
   })
 })
 
+test_that("changing how a figure looks does not change which figure is shown", {
+  # update*Input() moves a control back to its first choice, and the reactives
+  # behind the two preview controls are invalidated by every input in the
+  # sidebar -- not only by the ones that decide what there is to preview. So
+  # what has to hold is that nothing is pushed back to the browser at all when
+  # the appearance changes; the mock session cannot show it, because it never
+  # feeds an update into input$, so the two update calls are recorded instead.
+  pushed <- character()
+  record <- function(session, inputId, ...) {
+    pushed <<- c(pushed, inputId)
+    invisible(NULL)
+  }
+  local_mocked_bindings(updateSelectInput = record,
+                        updateRadioButtons = record, .package = "shiny")
+
+  shiny::testServer(gs_server(iris), {
+    do.call(session$setInputs, gs_test_inputs(tempdir()))
+    session$setInputs(preview_mode = "single", preview_stratum = "3")
+    session$elapse(500)
+    expect_equal(current_stratum()$label, "Species: virginica")
+    # The figures themselves were pushed once, when the data arrived.
+    expect_true("preview_stratum" %in% pushed)
+
+    for (change in list(list(alpha = 0.3), list(theme = "theme_minimal()"),
+                        list(palette = "Set1"), list(jitter = FALSE),
+                        list(ylim_min = 4.5))) {
+      pushed <<- character()
+      do.call(session$setInputs, change)
+      session$elapse(500)
+      expect_equal(pushed, character(), info = names(change))
+    }
+    expect_equal(current_stratum()$label, "Species: virginica")
+
+    # A variable that does decide what there is to preview still pushes the
+    # new list, or the box would go on offering figures that are not drawn.
+    pushed <<- character()
+    session$setInputs(strat_vars = character())
+    session$elapse(500)
+    expect_true("preview_stratum" %in% pushed)
+  })
+})
+
+test_that("a typed axis range reaches the figure and the code beside it", {
+  shiny::testServer(gs_server(iris), {
+    do.call(session$setInputs, gs_test_inputs(tempdir()))
+    session$setInputs(ylim_min = 4.5, ylim_max = 7)
+    session$elapse(500)
+
+    expect_equal(spec_r()$ylim_min, 4.5)
+    expect_match(output$code, "coord_cartesian(ylim = c(4.5, 7))", fixed = TRUE)
+    expect_no_error(output$plot)
+
+    # Clearing a box is NA, which is the automatic range it started with.
+    session$setInputs(ylim_min = NA, ylim_max = NA)
+    session$elapse(500)
+    expect_false(grepl("coord_cartesian", output$code, fixed = TRUE))
+  })
+})
+
 # --- line plots ---------------------------------------------------------------
 
 test_that("the server draws a line plot and writes the ID into the code", {
@@ -343,9 +403,9 @@ test_that("the app says what a survival curve is missing rather than erroring", 
   })
 })
 
-# --- categorising -------------------------------------------------------------
+# --- categorizing -------------------------------------------------------------
 
-test_that("a categorised variable joins the selectors and can be stratified on", {
+test_that("a categorized variable joins the selectors and can be stratified on", {
   outdir <- file.path(tempdir(), "gs-test-cut")
   unlink(outdir, recursive = TRUE)
 
@@ -389,7 +449,7 @@ test_that("a categorised variable joins the selectors and can be stratified on",
   unlink(outdir, recursive = TRUE)
 })
 
-test_that("an impossible categorisation is reported and not added", {
+test_that("an impossible categorization is reported and not added", {
   shiny::testServer(gs_server(epi_cohort), {
     do.call(session$setInputs, gs_test_inputs(tempdir()))
     session$setInputs(cut_var = "age", cut_method = "breaks",
@@ -403,7 +463,7 @@ test_that("an impossible categorisation is reported and not added", {
   })
 })
 
-test_that("adding a categorised variable leaves the other selections alone", {
+test_that("adding a categorized variable leaves the other selections alone", {
   shiny::testServer(gs_server(epi_cohort), {
     do.call(session$setInputs, gs_test_inputs(tempdir()))
     session$setInputs(yvar = "los_days", xvar = "treatment", group = "sex",
@@ -616,7 +676,8 @@ test_that("the UI builds and carries every control the server reads", {
                "smooth_span", "smooth_se", "cut_var", "cut_method", "add_cut",
                "facet", "strat_vars", "strat_mode", "min_n", "show_n",
                "export", "format", "outdir", "preview_mode", "strata_table",
-               "layer_summary")) {
+               "layer_summary", "xlim_min", "xlim_max", "ylim_min",
+               "ylim_max")) {
     expect_true(grepl(id, ui, fixed = TRUE), info = id)
   }
 })

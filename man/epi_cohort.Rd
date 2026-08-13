@@ -44,7 +44,7 @@ The data are simulated. They describe no real patients and support no
 clinical conclusion.
 
 \code{fu_days} and \code{death} make the data usable for a Kaplan-Meier curve, and
-\code{age} for the categorisation controls.
+\code{age} for the categorization controls.
 }
 \examples{
 str(epi_cohort)

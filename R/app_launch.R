@@ -37,7 +37,9 @@
 #'
 #' Every level is reported with the number of observations it contains, and
 #' that number is written into the figure title and onto each panel strip
-#' inside it: a strip reads `Site A (N = 303)` rather than `Site A`. A level
+#' inside it: a strip reads `site: Site A (N = 303)` rather than `Site A`, so
+#' that a level which does not explain itself -- the bare range a categorized
+#' variable produces -- still says which variable it is a level of. A level
 #' with no observations at all (an unused factor level) is listed with
 #' `N = 0` and produces no figure. Rows with a missing value in any layer
 #' variable are excluded -- a row that does not say which panel it belongs to
@@ -46,7 +48,7 @@
 #'
 #' @section Three things descriptive work keeps needing:
 #'
-#' Under **Categorise**, a continuous variable becomes a categorical one --
+#' Under **Categorize**, a continuous variable becomes a categorical one --
 #' quantile groups, equal-width bins or your own cut points -- and can then be
 #' used as a layer like any other categorical variable.
 #'

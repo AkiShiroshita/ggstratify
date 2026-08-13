@@ -190,13 +190,42 @@ test_that("a continuous grouping variable takes the gradient palette scale", {
   expect_match(disc, "scale_fill_brewer(palette = \"Blues\")", fixed = TRUE)
 })
 
+test_that("an axis range is emitted only when one was typed", {
+  none <- paste(gs_code_plot(iris_spec()), collapse = "\n")
+  expect_false(grepl("coord_cartesian", none, fixed = TRUE))
+
+  both <- paste(gs_code_plot(iris_spec(xlim_min = 0, xlim_max = 10,
+                                       ylim_min = 4.5, ylim_max = 7.5)),
+                collapse = "\n")
+  expect_match(both, "coord_cartesian(xlim = c(0, 10), ylim = c(4.5, 7.5))",
+               fixed = TRUE)
+
+  # One axis, and one end of it, can be left to the data on its own.
+  half <- paste(gs_code_plot(iris_spec(ylim_max = 7.5)), collapse = "\n")
+  expect_match(half, "coord_cartesian(ylim = c(NA, 7.5))", fixed = TRUE)
+  expect_false(grepl("xlim", half, fixed = TRUE))
+})
+
+test_that("a range zooms the figure rather than dropping the rows outside it", {
+  # scale limits would filter first, which moves the median of what is drawn.
+  # coord_cartesian() leaves the boxplot alone and looks at part of it.
+  dt <- gs_prepare_data(iris)
+  spec <- gs_spec(plot_type = "Boxplot", y = "Sepal.Length", ylim_min = 5,
+                  ylim_max = 6)
+  code <- gs_code_figure(spec, "d")
+
+  expect_silent(parse(text = paste(code, collapse = "\n")))
+  built <- ggplot2::ggplot_build(gs_eval_plot(code, dt))
+  expect_equal(built$data[[1]]$middle, stats::median(iris$Sepal.Length))
+})
+
 test_that("facets come from the strata in facet mode and from the spec otherwise", {
   strat <- paste(gs_code_plot(iris_spec(), facet_strata = TRUE), collapse = "\n")
   expect_match(strat, "facet_wrap(~ .strat_label", fixed = TRUE)
 
   user <- paste(gs_code_plot(iris_spec(facet = "Species", show_n = FALSE)),
                 collapse = "\n")
-  expect_match(user, "facet_wrap(~ Species)", fixed = TRUE)
+  expect_match(user, "facet_wrap(~ Species, labeller = label_both)", fixed = TRUE)
 
   none <- paste(gs_code_plot(iris_spec()), collapse = "\n")
   expect_false(grepl("facet_", none, fixed = TRUE))
@@ -213,17 +242,32 @@ test_that("each panel says how many observations it holds", {
   expect_match(flat, 'd <- add_facet_n(d, "Species")', fixed = TRUE)
   expect_match(flat, "facet_wrap(~ .facet_label)", fixed = TRUE)
 
-  # Switching the sizes off goes back to the plain column.
+  # Switching the sizes off goes back to the plain column, panelled through
+  # label_both() so that the strip still says which variable it is a level of.
   plain <- paste(gs_code_figure(iris_spec(facet = "Species", show_n = FALSE), "d"),
                  collapse = "\n")
   expect_false(grepl("add_facet_n", plain, fixed = TRUE))
-  expect_match(plain, "facet_wrap(~ Species)", fixed = TRUE)
+  expect_match(plain, "facet_wrap(~ Species, labeller = label_both)", fixed = TRUE)
 
-  # And the labels are the sizes: setosa, versicolor and virginica are 50 each.
+  # And the labels are the variable and the sizes: setosa, versicolor and
+  # virginica are 50 each.
   p <- gs_eval_plot(code, gs_prepare_data(iris))
   strips <- levels(p$data$.facet_label)
-  expect_equal(strips, c("setosa (N = 50)", "versicolor (N = 50)",
-                         "virginica (N = 50)"))
+  expect_equal(strips, c("Species: setosa (N = 50)", "Species: versicolor (N = 50)",
+                         "Species: virginica (N = 50)"))
+})
+
+test_that("a panel strip says which variable its level belongs to", {
+  # A categorized variable's levels are bare ranges: a strip reading [4.3,5.4]
+  # does not say what the range is a range of, and the axis and the legend are
+  # describing other variables.
+  dt <- gs_prepare_data(iris)
+  cut <- gs_cut("Sepal.Length", new = "sl_cat", method = "breaks", breaks = 5.4)
+  spec <- gs_spec(plot_type = "Boxplot", y = "Petal.Length", facet = "sl_cat",
+                  cuts = list(cut))
+
+  p <- gs_eval_plot(gs_code_figure(spec, "d"), gs_apply_cuts(dt, list(cut)))
+  expect_true(all(grepl("^sl_cat: ", levels(p$data$.facet_label))))
 })
 
 test_that("a panel strip counts only the rows the figure draws", {

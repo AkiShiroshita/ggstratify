@@ -61,7 +61,7 @@ gs_ui <- function(has_data = FALSE) {
         ),
 
         bslib::accordion_panel(
-          "Categorise",
+          "Categorize",
           shiny::helpText(
             "Turn a continuous variable into groups. The new variable can be",
             "used as a layer like any other categorical variable, and the",
@@ -83,7 +83,7 @@ gs_ui <- function(has_data = FALSE) {
             )
           ),
           shiny::textInput("cut_name", "New variable name"),
-          shiny::actionButton("add_cut", "Add categorised variable",
+          shiny::actionButton("add_cut", "Add categorized variable",
                               class = "btn-secondary w-100",
                               icon = shiny::icon("plus")),
           shiny::uiOutput("cuts_list")
@@ -116,10 +116,11 @@ gs_ui <- function(has_data = FALSE) {
                                TRUE),
           shiny::helpText(
             "Every figure says how many observations it was drawn from, and",
-            "so does every panel inside it: a strip reads Site A (N = 303)",
-            "rather than Site A. A stratum with N = 0 (an unused factor",
-            "level) is always listed on the Strata tab and never drawn. Rows",
-            "missing a layer variable are excluded, and counted for you."
+            "so does every panel inside it: a strip reads site: Site A",
+            "(N = 303) rather than Site A. A stratum with N = 0 (an unused",
+            "factor level) is always listed on the Strata tab and never",
+            "drawn. Rows missing a layer variable are excluded, and counted",
+            "for you."
           )
         ),
 
@@ -197,7 +198,26 @@ gs_ui <- function(has_data = FALSE) {
           shiny::textInput("title", "Title (blank = stratum name)"),
           shiny::textInput("lab_x", "X-axis label"),
           shiny::textInput("lab_y", "Y-axis label"),
-          shiny::textInput("lab_legend", "Legend label")
+          shiny::textInput("lab_legend", "Legend label"),
+          shiny::fluidRow(
+            shiny::column(6, shiny::numericInput("xlim_min", "X axis from",
+                                                 value = NA)),
+            shiny::column(6, shiny::numericInput("xlim_max", "X axis to",
+                                                 value = NA))
+          ),
+          shiny::fluidRow(
+            shiny::column(6, shiny::numericInput("ylim_min", "Y axis from",
+                                                 value = NA)),
+            shiny::column(6, shiny::numericInput("ylim_max", "Y axis to",
+                                                 value = NA))
+          ),
+          shiny::helpText(
+            "Blank is automatic, and either end can be left blank on its own.",
+            "The figure is zoomed into the range rather than filtered to it,",
+            "so a boxplot's median and a density's shape stay the ones the",
+            "whole data gives. A range typed here replaces a Kaplan-Meier",
+            "curve's 'Y axis from 0 to 1'."
+          )
         ),
 
         bslib::accordion_panel(

@@ -159,7 +159,7 @@ test_that("gs_long_strata stacks one copy per stratifying variable", {
 })
 
 test_that("the facet panels follow the level order, not the label spelling", {
-  # The labels a categorised variable produces sort the wrong way as text:
+  # The labels a categorized variable produces sort the wrong way as text:
   # "[0.5,3.9]" comes after "(3.9,8.13]".
   dt <- data.table::data.table(y = rnorm(60))
   dt[, band := cut(seq_len(60), breaks = c(0, 20, 40, 60),
