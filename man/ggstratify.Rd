@@ -7,8 +7,10 @@
 ggstratify(dataset = NULL, launch.browser = TRUE, ...)
 }
 \arguments{
-\item{dataset}{A data frame, \code{data.table}, matrix, or a path to a \code{.csv},
-\code{.tsv}, \code{.txt} or \code{.rds} file. When \code{NULL} the app starts with a file
+\item{dataset}{A data frame -- including a \code{tibble} or a \code{data.table} -- a
+matrix, or a path to a \code{.csv}, \code{.tsv}, \code{.txt} or \code{.rds} file. Whatever it
+is given becomes a plain \code{data.table}, so a grouped \code{tibble} is described
+as its rows, not as its groups. When \code{NULL} the app starts with a file
 upload control. The object is copied, never modified in place.}
 
 \item{launch.browser}{Passed to \code{\link[shiny:runApp]{shiny::runApp()}}. \code{TRUE} opens the system

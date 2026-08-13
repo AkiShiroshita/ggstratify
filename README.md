@@ -55,8 +55,7 @@ devtools::install_github("AkiShiroshita/ggstratify")
 library(ggstratify)
 
 ggstratify(epi_cohort)           # the example data that ships with the package
-ggstratify(iris)                 # data.frame / data.table / matrix
-ggstratify()                     # no argument: upload inside the app
+ggstratify(iris)                 # data.frame / tibble / data.table / matrix
 ```
 
 ## The screen

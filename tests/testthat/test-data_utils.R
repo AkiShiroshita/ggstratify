@@ -17,6 +17,29 @@ test_that("gs_prepare_data copies data.tables too", {
   expect_named(src, "a")
 })
 
+test_that("gs_prepare_data accepts a tibble and drops its subclass", {
+  skip_if_not_installed("tibble")
+  src <- tibble::as_tibble(data.frame(a = 1:3, b = letters[1:3]))
+  out <- gs_prepare_data(src)
+
+  # A plain data.table, not a tbl_df wearing a data.table hat: the generated
+  # code is written against data.table alone.
+  expect_identical(class(out), c("data.table", "data.frame"))
+  out[, a := 99L]
+  expect_identical(src$a, 1:3)
+})
+
+test_that("gs_prepare_data keeps every row of a subclassed data.frame", {
+  # Stands in for a grouped tibble: a grouping carried on the class is not a
+  # stratification, so it is dropped and no row is summarised away.
+  src <- data.frame(g = c("a", "a", "b"), y = 1:3)
+  class(src) <- c("grouped_df", "tbl_df", "tbl", "data.frame")
+  out <- gs_prepare_data(src)
+
+  expect_identical(class(out), c("data.table", "data.frame"))
+  expect_equal(nrow(out), 3L)
+})
+
 test_that("gs_prepare_data rejects non-tabular input", {
   expect_error(gs_prepare_data(1:10), "data.frame")
 })

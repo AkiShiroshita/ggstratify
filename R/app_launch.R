@@ -81,8 +81,10 @@
 #' code generator, so the code you are shown is the code that made the
 #' figure.
 #'
-#' @param dataset A data frame, `data.table`, matrix, or a path to a `.csv`,
-#'   `.tsv`, `.txt` or `.rds` file. When `NULL` the app starts with a file
+#' @param dataset A data frame -- including a `tibble` or a `data.table` -- a
+#'   matrix, or a path to a `.csv`, `.tsv`, `.txt` or `.rds` file. Whatever it
+#'   is given becomes a plain `data.table`, so a grouped `tibble` is described
+#'   as its rows, not as its groups. When `NULL` the app starts with a file
 #'   upload control. The object is copied, never modified in place.
 #' @param launch.browser Passed to [shiny::runApp()]. `TRUE` opens the system
 #'   browser.

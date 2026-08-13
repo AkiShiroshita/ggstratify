@@ -45,7 +45,8 @@ Suggests:
     knitr,
     rmarkdown,
     svglite (>= 2.1.0),
-    testthat (>= 3.0.0)
+    testthat (>= 3.0.0),
+    tibble
 VignetteBuilder: knitr
 LazyData: true
 Config/testthat/edition: 3

@@ -5,8 +5,9 @@
 
 #' Coerce an input into a standalone data.table
 #'
-#' Accepts a data.frame / data.table / matrix, or a path to a delimited or
-#' `.rds` file. The result is always a fresh `data.table` that shares no
+#' Accepts anything that inherits from data.frame (tibble and data.table
+#' included), a matrix, or a path to a delimited or `.rds` file. Subclasses
+#' are dropped: the result is always a fresh plain `data.table` that shares no
 #' columns with the caller's object, so the app can add helper columns by
 #' reference without mutating the user's data.
 #'

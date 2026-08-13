@@ -64,8 +64,7 @@ gs_ui <- function(has_data = FALSE) {
           "Categorize",
           shiny::helpText(
             "Turn a continuous variable into groups. The new variable can be",
-            "used as a layer like any other categorical variable, and the",
-            "generated code creates it for you."
+            "used as a layer like any other categorical variable"
           ),
           shiny::selectInput("cut_var", "Continuous variable", choices = NULL),
           shiny::selectInput("cut_method", "How", choices = GS_CUT_METHODS),
@@ -116,11 +115,10 @@ gs_ui <- function(has_data = FALSE) {
                                TRUE),
           shiny::helpText(
             "Every figure says how many observations it was drawn from, and",
-            "so does every panel inside it: a strip reads site: Site A",
-            "(N = 303) rather than Site A. A stratum with N = 0 (an unused",
-            "factor level) is always listed on the Strata tab and never",
-            "drawn. Rows missing a layer variable are excluded, and counted",
-            "for you."
+            "so does every panel inside it",
+            "A stratum with N = 0 (an unused factor level) is always listed",
+            "on the Strata tab and never drawn.",
+            "Rows missing a layer variable are excluded, and counted"
           )
         ),
 
@@ -232,12 +230,6 @@ gs_ui <- function(has_data = FALSE) {
           shiny::textInput("prefix", "File-name prefix (blank = plot type)"),
           shiny::selectInput("format", "File format", GS_FORMATS,
                              selected = "png"),
-          shiny::helpText(
-            "SVG is a vector format: it stays sharp at any size and can be",
-            "edited afterwards in Illustrator or Inkscape, which is what a",
-            "journal usually asks for. PNG is a picture of the figure, and is",
-            "the smaller file on large scatter plots."
-          ),
           shiny::fluidRow(
             shiny::column(6, shiny::numericInput("width", "Width (in)",
                                                  value = 7, min = 1, step = 0.5)),
