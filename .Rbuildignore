@@ -28,3 +28,5 @@
 ^revdep$
 ^\.Rhistory$
 ^\.RData$
+^doc$
+^Meta$

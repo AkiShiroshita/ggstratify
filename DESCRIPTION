@@ -23,7 +23,7 @@ Description: A point-and-click 'shiny' interface for the descriptive analysis
     behind the figure on screen, so that a description can be repeated, shared
     or accounted for later. Everything runs locally, with no network access and no AI involved.
 License: GPL-3
-URL: https://github.com/AkiShiroshita/ggstratify
+URL: https://github.com/AkiShiroshita/ggstratify, https://akishiroshita.github.io/ggstratify/
 BugReports: https://github.com/AkiShiroshita/ggstratify/issues
 Encoding: UTF-8
 Depends:

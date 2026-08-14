@@ -1,19 +1,4 @@
-url: ~
-
+url: https://akishiroshita.github.io/ggstratify/
 template:
   bootstrap: 5
 
-reference:
-  - title: Launching the app
-    desc: The entry point.
-    contents:
-      - ggstratify
-  - title: Data
-    contents:
-      - epi_cohort
-
-articles:
-  - title: Getting started
-    navbar: ~
-    contents:
-      - ggstratify
