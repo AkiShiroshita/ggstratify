@@ -58,8 +58,8 @@ figures and the axis.
 
 ``` r
 
-# install.packages("devtools")
-devtools::install_github("AkiShiroshita/ggstratify")
+# install.packages("remotes")
+remotes::install_github("AkiShiroshita/ggstratify")
 ```
 
 ## Usage
