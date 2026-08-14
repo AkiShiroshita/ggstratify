@@ -1,5 +1,13 @@
 # ggstratify
 
+<a href='https://github.com/AkiShiroshita/ggstratify'>
+  <img src='man/figures/logo.png'
+       alt="Logo of ggstratify"
+       align="right"
+       height="120" />
+</a>
+<br clear="right">
+
 **A one-function, point-and-click Shiny interface for the descriptive analysis.**
 
 ```r
