@@ -1,5 +1,8 @@
 # ggstratify
 
+[![Logo of
+ggstratify](reference/figures/logo.png)](https://github.com/AkiShiroshita/ggstratify)  
+
 **A one-function, point-and-click Shiny interface for the descriptive
 analysis.**
 
