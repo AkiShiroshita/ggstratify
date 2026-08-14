@@ -3,7 +3,8 @@
 .Rhistory
 .RData
 .Ruserdata
-figures/
+# Leading slash: the scratch folder at the repo root only, never man/figures/
+/figures/
 TODO.md
 *.Rcheck/
 Rplots.pdf
