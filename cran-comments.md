@@ -4,9 +4,8 @@
 * win-builder, R-release -- `devtools::check_win_release()`
 * win-builder, R-devel -- `devtools::check_win_devel()`
 * win-builder, R-oldrelease -- `devtools::check_win_oldrelease()`
-* macOS (tested by the maintainer)
-* Posit Cloud / Linux (tested by the maintainer)
-* Windows Server (tested by the maintainer)
+* Posit Cloud / Linux (R 4.6.1 on Ubuntu 24.04.4 LTS (x86_64))
+* Windows Server (Windows Server 2022 Standard (Version 21H2), x86_64)
 
 ## R CMD check results
 
