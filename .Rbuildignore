@@ -28,5 +28,9 @@
 ^revdep$
 ^\.Rhistory$
 ^\.RData$
+^\.Ruserdata$
 ^doc$
 ^Meta$
+
+# Test-generated graphics
+(^|/)Rplots\.(ps|pdf)$
