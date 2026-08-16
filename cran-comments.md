@@ -18,6 +18,8 @@ parts, both expected:
 * *Possibly misspelled words in DESCRIPTION: Kaplan.* "Kaplan" is a surname:
   the DESCRIPTION describes the Kaplan-Meier estimator, after Edward L. Kaplan
   and Paul Meier. The spelling is correct.
+* CITATION.cff is intentionally located in the package root directory for GitHub/Zenodo citation metadata.
+  It is not an R inst/CITATION file.
 
 `R CMD check` reports no unstated dependencies in the tests or the vignette.
 
