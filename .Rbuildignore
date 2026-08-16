@@ -19,6 +19,11 @@
 # README source (only the rendered README.md is shipped)
 ^README\.Rmd$
 
+# GitHub/Zenodo citation metadata: not a place R looks for citations, and
+# R CMD check --as-cran flags it both as a non-standard top-level file and as
+# a CITATION file outside inst/. Keep it in the repo, out of the tarball.
+^CITATION\.cff$
+
 # Development notes and scratch output
 ^figures$
 ^data-raw$
