@@ -2,8 +2,18 @@ Package: ggstratify
 Title: Fast Stratified Descriptive Figures with a Point-and-Click GUI
 Version: 0.0.1
 Authors@R:
-    person("Akihiro", "Shiroshita", email = "akihirokun8@gmail.com",
-           role = c("aut", "cre", "cph"))
+    c(
+      person(
+        "Akihiro", "Shiroshita",
+        email = "akihirokun8@gmail.com",
+        role = c("aut", "cre", "cph")
+      ),
+      person(
+        "Yuki", "Kataoka",
+        email = "youkiti@gmail.com",
+        role = "aut"
+      )
+    )
 Description: A point-and-click 'shiny' interface for the descriptive analysis
     that comes before any model is chosen. Pass a data frame, pick the
     variable to describe, and add the layers you want to see it within: a
