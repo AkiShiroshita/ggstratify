@@ -26,6 +26,8 @@ Useful links:
 
 - <https://github.com/AkiShiroshita/ggstratify>
 
+- <https://akishiroshita.github.io/ggstratify/>
+
 - Report bugs at <https://github.com/AkiShiroshita/ggstratify/issues>
 
 ## Author
@@ -36,3 +38,5 @@ holder\]
 Authors:
 
 - Akihiro Shiroshita <akihirokun8@gmail.com> \[copyright holder\]
+
+- Yuki Kataoka <youkiti@gmail.com>

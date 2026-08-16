@@ -9,7 +9,7 @@
 ## Citation
 
 Source:
-[`DESCRIPTION`](https://github.com/AkiShiroshita/ggstratify/blob/v0.0.1/DESCRIPTION)
+[`DESCRIPTION`](https://github.com/AkiShiroshita/ggstratify/blob/main/DESCRIPTION)
 
 Shiroshita A, Kataoka Y (2026). *ggstratify: Fast Stratified Descriptive
 Figures with a Point-and-Click GUI*. R package version 0.0.1,
