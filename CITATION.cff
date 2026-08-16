@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+title: "ggstratify: Interactive Descriptive Analysis with Shiny"
+version: 0.0.1
+doi: 10.5281/zenodo.21961507
+date-released: 2026-08-15
+
+authors:
+  - family-names: "Shiroshita"
+    given-names: "Akihiro"
+    email: "akihirokun8@gmail.com"
+    orcid: "https://orcid.org/0000-0003-0262-459X"
+  - family-names: "Kataoka"
+    given-names: "Yuki"
+    email: "youkiti@gmail.com"
+    orcid: "https://orcid.org/0000-0001-7982-5213"
+
+repository-code: "https://github.com/AkiShiroshita/ggstratify"
+license: "GPL-3"
+
+abstract: >
+  An R package providing an interactive Shiny application
+  for descriptive analysis.
