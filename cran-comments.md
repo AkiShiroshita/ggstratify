@@ -6,20 +6,22 @@
 * win-builder, R-oldrelease -- `devtools::check_win_oldrelease()`
 * Posit Cloud / Linux (R 4.6.1 on Ubuntu 24.04.4 LTS (x86_64))
 * Windows Server (Windows Server 2022 Standard (Version 21H2), x86_64)
+* R-hub v2 / Ubuntu 24.04.4 LTS (x86_64-pc-linux-gnu), R-devel (2026-06-21 r90185)
+* R-hub v2 / macOS Sequoia 15.7.7 (x86_64-apple-darwin20), R-devel (2026-06-24 r90190)
+* R-hub v2 / Windows Server 2022 (x86_64-w64-mingw32), R-devel (2026-08-15 r90413 ucrt)
 
 ## R CMD check results
 
-0 errors, 0 warnings, 1 NOTE, on every environment listed above.
+0 errors and 0 warnings everywhere.
 
-The remaining NOTE is `checking CRAN incoming feasibility`, and it has two
-parts, both expected:
+The three R-hub environments do not run `checking CRAN incoming feasibility`
+and are clean: 0 NOTEs. Every other environment reports that one NOTE, and it
+has two parts, both expected:
 
 * *New submission.* This is the package's first release.
 * *Possibly misspelled words in DESCRIPTION: Kaplan.* "Kaplan" is a surname:
   the DESCRIPTION describes the Kaplan-Meier estimator, after Edward L. Kaplan
   and Paul Meier. The spelling is correct.
-* CITATION.cff is intentionally located in the package root directory for GitHub/Zenodo citation metadata.
-  It is not an R inst/CITATION file.
 
 `R CMD check` reports no unstated dependencies in the tests or the vignette.
 
