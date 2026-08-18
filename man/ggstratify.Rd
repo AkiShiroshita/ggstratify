@@ -13,7 +13,10 @@ already read into your session and already of the types you mean. A file
 path is not accepted; see \emph{Before you start}. Whatever it is given becomes
 a plain \code{data.table}, so a grouped \code{tibble} is described as its rows, not
 as its groups. The object is copied, never modified in place, and its name
-is what the generated code refers to it by.}
+is what the generated code refers to it by -- so pass a named object,
+rather than an expression: \code{ggstratify(head(cohort))} is described
+perfectly well, but the code it prints says \code{d <- mydata}, because
+\code{head(cohort)} is not a name.}
 
 \item{launch.browser}{Passed to \code{\link[shiny:runApp]{shiny::runApp()}}. \code{TRUE} opens the system
 browser.}

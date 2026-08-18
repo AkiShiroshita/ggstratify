@@ -495,12 +495,17 @@ gs_server <- function(dataset, data_name = "mydata") {
 #' device: \pkg{svglite} when it is installed, and otherwise the cairo device
 #' that ships with R, so that the option works without a further install.
 #'
-#' @param format `"png"` or `"svg"`.
+#' @param format `"png"` or `"svg"`. Anything else is an error.
 #' @return A device function, ready to hand to [ggplot2::ggsave()].
 #' @keywords internal
 #' @noRd
 gs_device <- function(format = "png") {
-  if (!identical(format, "svg")) return(ragg::agg_png)
+  if (identical(format, "png")) return(ragg::agg_png)
+  # Anything but the two formats the UI offers is a bug on the way in, and is
+  # worth saying so rather than quietly writing a PNG under an .svg name.
+  if (!identical(format, "svg")) {
+    stop("Unknown figure format: ", format, call. = FALSE)
+  }
   if (requireNamespace("svglite", quietly = TRUE)) {
     return(svglite::svglite)
   }
@@ -531,7 +536,10 @@ GS_PREVIEW_RES <- 150
 GS_SAMPLE_SCATTER <- 1000000L
 GS_SAMPLE_OTHER <- 10000000L
 
-#' Row cap for previewing a spec's figure
+#' Row target for previewing a spec's figure
+#'
+#' A target rather than a hard cap: `gs_downsample()` will go over it to keep
+#' a whole trajectory or a whole stratum, see there.
 #'
 #' A Kaplan-Meier curve is never sampled. The other plot types show the shape
 #' of a distribution, which a large sample preserves; a survival curve *is*
@@ -550,19 +558,30 @@ gs_sample_threshold <- function(spec) {
 #' Applies to previews only. The in-app export and the generated script always
 #' use every row, so nothing written to disk is ever silently subsampled.
 #'
-#' A line plot with an ID variable is sampled one whole trajectory at a time:
-#' dropping rows from within a line would draw a line nobody has, in the same
-#' way that a sampled survival curve is a different curve.
+#' `threshold` is a target, not a strict upper bound, and both of the grouped
+#' branches can exceed it rather than drop a group entirely:
 #'
-#' When `by` is given, sampling is done within each group so that small strata
-#' keep their rows instead of being washed out by large ones.
+#'   * A line plot with an ID variable is sampled one whole trajectory at a
+#'     time -- dropping rows from within a line would draw a line nobody has,
+#'     in the same way that a sampled survival curve is a different curve --
+#'     so the rows returned are those of the sampled IDs, which is only
+#'     `threshold` on average.
+#'   * When `by` is given, sampling is done within each group so that small
+#'     strata keep their rows instead of being washed out by large ones, and
+#'     every group keeps at least one row. With more groups than `threshold`
+#'     that alone puts the result over it -- which is the intended trade: a
+#'     panel drawn from no rows at all is worse than a preview slightly larger
+#'     than asked for. In practice the caps are in the millions and the panels
+#'     in the tens, so the case is a corner one.
+#'
+#' The ungrouped branch is exact.
 #'
 #' @param d A `data.table`.
 #' @param spec A spec list, which sets the sampling unit and, by default, the
-#'   row cap.
+#'   row target.
 #' @param enabled Whether the user left subsampling switched on.
 #' @param by Optional grouping column to sample within.
-#' @param threshold Row cap. Defaults to the one the spec's plot type asks
+#' @param threshold Row target. Defaults to the one the spec's plot type asks
 #'   for; passed explicitly by the tests, which would otherwise have to
 #'   allocate a table of the real cap's size to reach this code at all.
 #' @return `d`, or a sample of it.

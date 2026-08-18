@@ -28,6 +28,10 @@ gs_cut <- function(var, new = NULL, method = "quantile", n = 4L,
   breaks <- sort(unique(breaks[is.finite(breaks)]))
   var <- as.character(var)
   if (is.null(new) || !nzchar(new)) new <- paste0(var, "_cat")
+  # n is floored at 2: one group is not a categorization, and every caller
+  # that builds a cut goes through here, so nothing downstream has to carry
+  # the case. gs_check_cut() still holds the lower bound as well, for a cut
+  # assembled as a plain list without this constructor.
   list(var = var, new = as.character(new), method = method,
        n = max(n, 2L), breaks = breaks)
 }
@@ -64,11 +68,15 @@ gs_parse_breaks <- function(x) {
 gs_cut_name <- function(var, taken = character()) {
   base <- paste0(var, "_cat")
   if (!base %in% taken) return(base)
-  for (i in 2:99) {
+  # Unbounded: a capped search that gives up and returns `base` would hand
+  # back the very name it was asked to avoid. The loop ends on the first free
+  # candidate, so it runs `length(taken)` times at the very worst.
+  i <- 2L
+  repeat {
     cand <- paste0(base, i)
     if (!cand %in% taken) return(cand)
+    i <- i + 1L
   }
-  base
 }
 
 #' A one-line human description of a cut, for the sidebar list
@@ -133,10 +141,13 @@ gs_apply_cuts <- function(dt, cuts) {
   errors <- character()
   for (cut in cuts) {
     line <- gs_code_cut_line(cut, "dt")
-    res <- try(eval(parse(text = line), envir = env), silent = TRUE)
-    if (inherits(res, "try-error")) {
-      errors <- c(errors, sprintf("%s: %s", cut$new,
-                                  conditionMessage(attr(res, "condition"))))
+    # tryCatch rather than try(): the message comes from the condition the
+    # handler is given, instead of from an attribute of the returned object.
+    msg <- NULL
+    tryCatch(eval(parse(text = line), envir = env),
+             error = function(e) msg <<- conditionMessage(e))
+    if (!is.null(msg)) {
+      errors <- c(errors, sprintf("%s: %s", cut$new, msg))
       if (cut$new %in% names(out)) out[, (cut$new) := NULL]
     }
   }
@@ -161,7 +172,7 @@ gs_check_cut <- function(dt, cut) {
   problems <- character()
   if (!is.numeric(dt[[cut$var]])) {
     problems <- c(problems, sprintf(
-      "'%s' is not numeric; only continuous variables can be categorized.",
+      "'%s' is not numeric; only numeric variables can be categorized.",
       cut$var))
   }
   if (!nzchar(cut$new)) {

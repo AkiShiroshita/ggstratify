@@ -365,3 +365,41 @@ test_that("gs_missing_report counts only the variables that are missing", {
   expect_equal(nrow(gs_missing_report(dt, "b")), 0L)
   expect_equal(nrow(gs_missing_report(dt, character())), 0L)
 })
+
+test_that("escaping a reserved name cannot collide with a real column", {
+  # .strat_var is renamed to .strat_var_, which the data already has. Before
+  # make.unique() ran last, both columns came out called .strat_var_ and the
+  # app read the wrong one.
+  d <- data.frame(a = 1:3, b = 4:6)
+  names(d) <- c(".strat_var", ".strat_var_")
+  out <- gs_prepare_data(d)
+  expect_equal(anyDuplicated(names(out)), 0L)
+  expect_equal(length(names(out)), 2L)
+
+  # The same for a blank name that fills to one already in use.
+  d2 <- data.frame(V1 = 1:3, x = 4:6)
+  names(d2) <- c("V1", "")
+  out2 <- gs_prepare_data(d2)
+  expect_equal(anyDuplicated(names(out2)), 0L)
+})
+
+test_that("a list-column is refused at the door, not inside the app", {
+  d <- data.frame(g = c("a", "b"), stringsAsFactors = FALSE)
+  d$lst <- list(1:2, 3:4)
+  expect_error(gs_prepare_data(d), "lst")
+  expect_error(gs_prepare_data(d), "lists rather than values")
+})
+
+test_that("the shipped example data is what its documentation says it is", {
+  expect_equal(dim(epi_cohort), c(600L, 11L))
+  # The n = 0 stratum only works if Site D survives as a declared level.
+  expect_true("Site D" %in% levels(epi_cohort$site))
+  expect_equal(sum(epi_cohort$site == "Site D"), 0L)
+  # The documented Severe count, and the fact that the default minimum keeps
+  # it: the group is there to try the control on, not to be filtered by it.
+  expect_equal(sum(epi_cohort$severity == "Severe"), 20L)
+  expect_gt(sum(epi_cohort$severity == "Severe"), gs_spec()$min_n)
+  # Follow-up is bounded by the one-year study end, and death is 0/1.
+  expect_true(all(epi_cohort$fu_days >= 1 & epi_cohort$fu_days <= 365))
+  expect_setequal(unique(epi_cohort$death), c(0L, 1L))
+})

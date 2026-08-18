@@ -42,3 +42,19 @@ test_that("gs_num falls back on unusable input", {
   expect_equal(gs_num("abc", 7), 7)
   expect_equal(gs_num(NA, 7), 7)
 })
+
+test_that("an axis range that runs backwards is reported", {
+  spec <- gs_spec(plot_type = "Boxplot", y = "a", xlim_min = 100,
+                  xlim_max = 10)
+  expect_match(gs_validate_spec(spec), "X-axis range runs backwards", all = FALSE)
+
+  spec2 <- gs_spec(plot_type = "Boxplot", y = "a", ylim_min = 5, ylim_max = 5)
+  expect_match(gs_validate_spec(spec2), "Y-axis range runs backwards", all = FALSE)
+
+  # One end alone means "from here"/"up to here" and is not a problem.
+  spec3 <- gs_spec(plot_type = "Boxplot", y = "a", xlim_min = 10)
+  expect_false(any(grepl("runs backwards", gs_validate_spec(spec3))))
+
+  spec4 <- gs_spec(plot_type = "Boxplot", y = "a", xlim_min = 10, xlim_max = 100)
+  expect_false(any(grepl("runs backwards", gs_validate_spec(spec4))))
+})

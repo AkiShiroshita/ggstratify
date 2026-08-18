@@ -103,7 +103,10 @@
 #'   path is not accepted; see *Before you start*. Whatever it is given becomes
 #'   a plain `data.table`, so a grouped `tibble` is described as its rows, not
 #'   as its groups. The object is copied, never modified in place, and its name
-#'   is what the generated code refers to it by.
+#'   is what the generated code refers to it by -- so pass a named object,
+#'   rather than an expression: `ggstratify(head(cohort))` is described
+#'   perfectly well, but the code it prints says `d <- mydata`, because
+#'   `head(cohort)` is not a name.
 #' @param launch.browser Passed to [shiny::runApp()]. `TRUE` opens the system
 #'   browser.
 #' @param ... Further arguments passed to [shiny::runApp()].
@@ -134,7 +137,10 @@ ggstratify <- function(dataset, launch.browser = TRUE, ...) {
   app <- shiny::shinyApp(
     ui = gs_ui(),
     server = gs_server(dataset, data_name),
-    # ragg is a markedly faster raster device than the default on Windows.
+    # The in-app preview only. renderPlot() draws through whatever device this
+    # option names, and ragg is a markedly faster raster device than the
+    # default on Windows. The exported files do not depend on it: gs_device()
+    # hands ggsave() ragg::agg_png or an SVG device by name.
     onStart = function() {
       old <- options(shiny.useragg = TRUE)
       shiny::onStop(function() options(old))
@@ -148,10 +154,20 @@ ggstratify <- function(dataset, launch.browser = TRUE, ...) {
 #' The name the generated code should call the data by
 #'
 #' `ggstratify(cohort)` should print code that starts `d <- cohort`, not
-#' `d <- mydata`. Anything that is not a plain variable name -- a subset, a
-#' pipeline, a literal -- would not be a name the reader could paste, so those
-#' fall back to the placeholder the Export panel starts with, which the user
-#' can overwrite.
+#' `d <- mydata`. The rule is deliberately narrow, and stated here because the
+#' generated code is the visible half of it: the argument is used as written
+#' only when it is a syntactic name, one `make.names()` leaves alone.
+#' Everything else falls back to the placeholder the Export panel starts with,
+#' which the user can overwrite. Three kinds of argument fall back:
+#'
+#'   * an expression -- `ggstratify(read.csv("x.csv"))`, a subset, a pipeline,
+#'     a literal. These are accepted as data, but they are values rather than
+#'     names, and a reader cannot paste one at the top of a script and get the
+#'     same object back.
+#'   * a quoted non-syntactic name -- ``ggstratify(`my data`)`` -- which would
+#'     have to be written back with its backticks to parse.
+#'   * a dot name -- `.`, `...`, `..1` -- which is a name only inside the call
+#'     that supplied it, and means nothing in a script pasted elsewhere.
 #'
 #' @param expr The unevaluated `dataset` argument, from `substitute()`.
 #' @return A single syntactic name.
@@ -160,6 +176,8 @@ ggstratify <- function(dataset, launch.browser = TRUE, ...) {
 gs_data_name <- function(expr) {
   if (!is.name(expr)) return("mydata")
   nm <- as.character(expr)
+  # nzchar() guards the empty name, which is a name but never one that prints.
   if (!nzchar(nm) || !identical(make.names(nm), nm)) return("mydata")
+  if (grepl("^([.]|[.]{3}|[.][.][0-9]+)$", nm)) return("mydata")
   nm
 }

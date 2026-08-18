@@ -159,3 +159,28 @@ test_that("a rule describes itself for the sidebar", {
                                       breaks = c(50, 65))),
                "age_cat <- age (cut at 50, 65)")
 })
+
+test_that("a default cut name never returns a name already taken", {
+  taken <- c("x_cat", paste0("x_cat", 2:150))
+  nm <- gs_cut_name("x", taken)
+  expect_false(nm %in% taken)
+})
+
+test_that("the group-count bounds hold for a cut built without gs_cut()", {
+  # gs_cut() floors n at 2, so the lower bound cannot be reached through it --
+  # see the constructor test above. A cut assembled as a plain list skips that
+  # flooring, and gs_check_cut() is what still catches it.
+  dt <- data.table::data.table(age = as.numeric(1:100))
+  raw <- list(var = "age", new = "age_cat", method = "quantile", n = 1L,
+              breaks = numeric())
+  expect_match(gs_check_cut(dt, raw), "between 2 and 20")
+  expect_match(gs_check_cut(dt, gs_cut("age", n = 25)), "between 2 and 20")
+  expect_equal(gs_check_cut(dt, gs_cut("age", n = 4)), character())
+})
+
+test_that("a cut that cannot be applied is reported, not thrown", {
+  dt <- data.table::data.table(x = rep(1, 50))
+  out <- gs_apply_cuts(dt, list(gs_cut("x", new = "x_cat", n = 4)))
+  expect_true(length(attr(out, "gs_cut_error")) > 0L)
+  expect_false("x_cat" %in% names(out))
+})

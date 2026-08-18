@@ -10,7 +10,6 @@
 #' @importFrom patchwork wrap_plots
 #' @importFrom stats setNames
 #' @importFrom survival Surv survfit
-#' @importFrom tools file_ext file_path_sans_ext
 #' @importFrom utils head modifyList
 "_PACKAGE"
 

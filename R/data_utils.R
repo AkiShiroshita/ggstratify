@@ -26,6 +26,18 @@ gs_prepare_data <- function(x) {
     stop("`dataset` must be a data.frame or a matrix, already read into the ",
          "session with the column types you mean it to have.", call. = FALSE)
   }
+  # A list-column is a column of objects rather than of values. There is no
+  # level to stratify on and no value to plot, and left alone it surfaces much
+  # later as a data.table error from inside gs_classify_vars(). Naming it here
+  # is the same bargain as the type check above: one clear message at the
+  # call, rather than a puzzle from inside the app.
+  listy <- names(x)[!vapply(x, is.atomic, logical(1L))]
+  if (length(listy)) {
+    stop("These columns hold lists rather than values, and cannot be ",
+         "described: ", paste(listy, collapse = ", "),
+         ". Drop them, or unnest them into columns of values, before ",
+         "calling ggstratify().", call. = FALSE)
+  }
   # copy() first: as.data.table()/setDT() on a data.table would otherwise let
   # later `:=` calls write straight into the caller's object.
   dt <- data.table::as.data.table(data.table::copy(x))
@@ -39,12 +51,17 @@ gs_clean_names <- function(dt) {
   nms <- names(dt)
   blank <- is.na(nms) | !nzchar(nms)
   if (any(blank)) nms[blank] <- paste0("V", seq_along(nms))[blank]
-  if (anyDuplicated(nms)) nms <- make.unique(nms, sep = "_")
   # Reserved names used by the preview machinery and by the Kaplan-Meier
   # fit, which would otherwise be overwritten by a column of the same name.
   reserved <- c(".strat_var", ".strat_level", ".strat_label", ".gs_stratum",
                 GS_FACET_COL, GS_KM_COLS)
   nms[nms %in% reserved] <- paste0(nms[nms %in% reserved], "_")
+  # Last, and after the two renames above rather than before: filling a blank
+  # name and escaping a reserved one can each land on a name already in use --
+  # data holding both `.strat_var` and `.strat_var_` is the case that bites --
+  # and a duplicate name here is one the app would silently read the wrong
+  # column through.
+  if (anyDuplicated(nms)) nms <- make.unique(nms, sep = "_")
   data.table::setnames(dt, nms)
   dt[]
 }
@@ -101,9 +118,14 @@ gs_classify_vars <- function(dt, max_levels = 50L, min_continuous = 10L) {
 
 #' Can a column be handed to `survival::Surv()` as the event indicator?
 #'
-#' Surv() accepts logical, 0/1 and 1/2. A factor is rejected even when it has
-#' exactly two levels, so it is rejected here too rather than left to fail
-#' inside the fit.
+#' The app draws one kind of survival curve -- plain right-censored -- and so
+#' accepts the codings that mean that: logical, 0/1 and 1/2.
+#'
+#' A factor is rejected, but not because `Surv()` refuses one. It does not:
+#' `Surv(time, factor)` builds a multi-state outcome (`type = "mright"`),
+#' which fits and plots perfectly well as something this app has no way to
+#' draw. Rejecting it here is what keeps a two-level factor from quietly
+#' becoming a different analysis than the one on the screen.
 #' @keywords internal
 #' @noRd
 gs_is_event_col <- function(col) {

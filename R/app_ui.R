@@ -339,17 +339,33 @@ gs_ui <- function() {
   )
 }
 
+#' Render a string as a quoted JavaScript string literal
+#'
+#' Every conditionalPanel() condition below is built by pasting one of the
+#' package's own constants into a fragment of JavaScript, so nothing hostile
+#' can reach it. The escaping is here so that adding a plot type or a theme
+#' whose name happens to contain an apostrophe -- `Tufte's boxplot` -- breaks
+#' nothing more than the label it is written in.
+#' @keywords internal
+#' @noRd
+gs_js_str <- function(x) {
+  # fixed = TRUE on both: the strings being escaped are labels, not patterns.
+  x <- gsub("\\", "\\\\", x, fixed = TRUE)
+  x <- gsub("'", "\\'", x, fixed = TRUE)
+  paste0("'", x, "'")
+}
+
 #' Render a character vector as a JavaScript array literal
 #' @keywords internal
 #' @noRd
 gs_js_array <- function(x) {
-  paste0("[", paste0("'", x, "'", collapse = ","), "]")
+  paste0("[", paste0(gs_js_str(x), collapse = ","), "]")
 }
 
 #' conditionalPanel() condition for a plot-type-only control
 #' @keywords internal
 #' @noRd
-gs_js_type <- function(type) sprintf("input.plot_type == '%s'", type)
+gs_js_type <- function(type) paste0("input.plot_type == ", gs_js_str(type))
 
 #' conditionalPanel() conditions for the Kaplan-Meier-only controls
 #' @keywords internal
@@ -359,7 +375,7 @@ gs_js_km <- function() gs_js_type(GS_KM)
 #' @rdname gs_js_km
 #' @keywords internal
 #' @noRd
-gs_js_not_km <- function() sprintf("input.plot_type != '%s'", GS_KM)
+gs_js_not_km <- function() paste0("input.plot_type != ", gs_js_str(GS_KM))
 
 #' conditionalPanel() condition: at least one variable splits the figures
 #' @keywords internal
@@ -371,7 +387,7 @@ gs_js_strat_vars <- function() {
 #' conditionalPanel() condition: a variable is panelling the figure
 #' @keywords internal
 #' @noRd
-gs_js_has_facet <- function() sprintf("input.facet != '%s'", GS_NONE)
+gs_js_has_facet <- function() paste0("input.facet != ", gs_js_str(GS_NONE))
 
 #' conditionalPanel() condition: the preview could show either mode
 #'
@@ -426,9 +442,44 @@ GS_CSS <- "
 "
 
 # Copying happens in the browser so that it also works over a remote session.
+#
+# The Clipboard API is only available in a secure context, which localhost is
+# but a plain http:// address on another machine is not, so the button has to
+# survive not having it: execCommand('copy') over a temporary textarea is the
+# older path every browser still honours. Either way the button says what
+# happened -- a copy button that silently does nothing leaves the user
+# pasting whatever was on the clipboard before.
 GS_COPY_JS <- "
 $(document).on('click', '#copy_code', function() {
   var el = document.getElementById('code');
-  if (el) { navigator.clipboard.writeText(el.innerText); }
+  if (!el) { return; }
+  var btn = this;
+  // Read once and remember: a second click while the button is still
+  // saying 'Copied' would otherwise make that the label it restores.
+  if (!btn.dataset.gsLabel) { btn.dataset.gsLabel = btn.innerHTML; }
+  var label = btn.dataset.gsLabel;
+  var say = function(msg) {
+    btn.innerHTML = msg;
+    setTimeout(function() { btn.innerHTML = label; }, 1500);
+  };
+  var fallback = function() {
+    var ta = document.createElement('textarea');
+    ta.value = el.innerText;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+    say(ok ? 'Copied' : 'Press Ctrl+C to copy');
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(el.innerText).then(
+      function() { say('Copied'); }, fallback);
+  } else {
+    fallback();
+  }
 });
 "

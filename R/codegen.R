@@ -3,6 +3,16 @@
 # "Export all figures" button and the R-code tab all draw their figure by
 # evaluating exactly that text. A figure can therefore never drift from the
 # code the user is told to run.
+#
+# The claim is about the figure, and stops where the figure does. Getting to
+# `d` -- the categorized columns, the rows dropped for a missing layer value,
+# the subset that makes this figure its stratum -- is written here too, by
+# gs_code_script(), but the app reaches `d` by calling the helpers rather than
+# by evaluating those lines. The two stay in step because they share the one
+# implementation underneath: gs_apply_cuts() runs the very lines
+# gs_code_cut_line() writes, and gs_split_strata() takes the subset
+# gs_code_script() prints. gs_eval_plot() is handed a `d` that is already
+# there, and evaluates only the figure.
 
 # --- literal helpers ---------------------------------------------------------
 

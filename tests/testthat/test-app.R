@@ -728,3 +728,20 @@ test_that("nothing is drawn until something has been chosen", {
     expect_match(output$code, "^# Cannot generate code yet")
   })
 })
+
+test_that("gs_device refuses a format it has no device for", {
+  expect_identical(gs_device("png"), ragg::agg_png)
+  expect_true(is.function(gs_device("svg")))
+  expect_error(gs_device("pdf"), "Unknown figure format")
+})
+
+test_that("the JavaScript the conditionalPanels are built from is escaped", {
+  expect_equal(gs_js_str("Boxplot"), "'Boxplot'")
+  expect_equal(gs_js_str("Tufte's boxplot"), "'Tufte\\'s boxplot'")
+  expect_equal(gs_js_str("a\\b"), "'a\\\\b'")
+  expect_equal(gs_js_array(c("a", "b")), "['a','b']")
+  # The real constants must survive the round trip unchanged.
+  expect_equal(gs_js_type(GS_KM),
+               sprintf("input.plot_type == '%s'", GS_KM))
+  expect_equal(gs_js_has_facet(), sprintf("input.facet != '%s'", GS_NONE))
+})

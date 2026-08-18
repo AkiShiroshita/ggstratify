@@ -26,6 +26,10 @@ GS_THEMES <- c(
 # RColorBrewer palette names, grouped as ggplotgui groups them. Written out
 # rather than queried from RColorBrewer so that it is not a dependency; the
 # palettes themselves are applied by ggplot2's scale_*_brewer().
+# The shape is deliberately not uniform: selectInput() reads a bare string as
+# one option and a list as an <optgroup>, so wrapping the default in list()
+# would turn it into a group of one nameless entry rather than the plain first
+# choice it has to be.
 GS_PALETTES <- list(
   "Default (ggplot2)" = "",
   Qualitative = as.list(c("Accent", "Dark2", "Paired", "Pastel1", "Pastel2",
@@ -115,8 +119,7 @@ gs_spec <- function(...) {
     format      = "png",          # see GS_FORMATS
     width       = 7,
     height      = 5,
-    dpi         = 300,
-    sample_n    = NA_integer_
+    dpi         = 300
   )
   args <- list(...)
   # modifyList() merges two lists element by element, which is right for every
@@ -155,8 +158,10 @@ gs_layer_vars <- function(spec) {
 
 #' How many layers a spec describes, the described variable included
 #'
-#' One layer is a plain figure, two are a facet_wrap, and beyond that the
-#' extra variables become separate figures.
+#' The described variable, plus one for each variable that panels or splits
+#' it. What a given count looks like is the user's arrangement, not this
+#' number: two layers is a `facet_wrap()` when the second variable is the
+#' facet, and one figure per level when it is a stratifying variable instead.
 #' @keywords internal
 #' @noRd
 gs_n_layers <- function(spec) 1L + length(gs_layer_vars(spec))
@@ -293,6 +298,13 @@ gs_validate_spec <- function(spec, info = NULL) {
     }
   }
 
+  # Checked for every plot type, and before the Kaplan-Meier branch returns.
+  # An inverted range is silently destructive rather than loud: coord_cartesian
+  # draws an empty panel, and on a survival curve the number-at-risk times are
+  # the ones inside the range, so a backwards range leaves the table with no
+  # columns at all.
+  problems <- c(problems, gs_validate_limits(spec))
+
   if (type == GS_KM) {
     if (!nzchar(spec$time)) {
       problems <- c(problems, sprintf("A %s needs a time variable.", GS_KM))
@@ -341,6 +353,27 @@ gs_validate_spec <- function(spec, info = NULL) {
   }
 
   problems
+}
+
+#' Axis ranges that a figure cannot be drawn in
+#'
+#' Both ends of a range are optional -- one alone means "from here" or "up to
+#' here" -- so the check only applies when both are given. Equal ends are
+#' rejected alongside reversed ones: a range of zero width is as undrawable as
+#' a backwards one.
+#' @keywords internal
+#' @noRd
+gs_validate_limits <- function(spec) {
+  one <- function(lo, hi, axis) {
+    lo <- gs_num(lo)
+    hi <- gs_num(hi)
+    if (is.na(lo) || is.na(hi) || lo < hi) return(character())
+    sprintf(paste("The %s-axis range runs backwards: %s is not below %s.",
+                  "Swap them, or clear one to leave that end free."),
+            axis, gs_n(lo), gs_n(hi))
+  }
+  c(one(spec$xlim_min, spec$xlim_max, "X"),
+    one(spec$ylim_min, spec$ylim_max, "Y"))
 }
 
 #' The type checks that only a Kaplan-Meier curve needs

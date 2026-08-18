@@ -37,6 +37,13 @@ test_that("the generated code calls the data by the name it was passed under", {
   # Anything that is not a plain name is not something to paste into a script.
   expect_equal(gs_data_name(quote(subset(iris, Species == "setosa"))), "mydata")
   expect_equal(gs_data_name(quote(`odd name`)), "mydata")
+  # Dot names are names, and syntactic ones, but they mean nothing outside the
+  # call that supplied them.
+  expect_equal(gs_data_name(quote(.)), "mydata")
+  expect_equal(gs_data_name(quote(...)), "mydata")
+  expect_equal(gs_data_name(quote(..1)), "mydata")
+  # A leading dot is otherwise an ordinary name and stays one.
+  expect_equal(gs_data_name(quote(.cohort)), ".cohort")
 })
 
 test_that("there is exactly one exported function to learn", {
@@ -55,4 +62,18 @@ test_that("the package does not depend on ggplotgui", {
     ",\\s*"
   ))
   expect_false(any(grepl("ggplotgui", deps)))
+})
+
+test_that("every namespace import is declared and every declared one is used", {
+  ns <- readLines(system.file("NAMESPACE", package = "ggstratify"))
+  imported <- unique(c(
+    sub("^import[(]([^)]*)[)]$", "\\1", grep("^import[(]", ns, value = TRUE)),
+    sub("^importFrom[(]([^,]*),.*$", "\\1", grep("^importFrom[(]", ns, value = TRUE))
+  ))
+  desc <- read.dcf(system.file("DESCRIPTION", package = "ggstratify"))
+  declared <- trimws(gsub("[(][^)]*[)]", "",
+                          strsplit(desc[1, "Imports"], ",")[[1]]))
+  # A namespace import that DESCRIPTION does not list is an R CMD check
+  # warning. `tools` was imported here for two functions nothing called.
+  expect_equal(setdiff(imported, declared), character())
 })
