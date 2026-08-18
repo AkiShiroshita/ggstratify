@@ -96,8 +96,10 @@ by dropout or by the end of the study at 365 days.</p></dd>
     <p>Two features are deliberate. <code>site</code> declares a fourth level, <code>"Site D"</code>,
 that recruited nobody, so stratifying by <code>site</code> produces a stratum with
 <code>n = 0</code>; the app lists it and draws no figure. <code>severity</code> has a small
-<code>"Severe"</code> group, which the minimum-n rule filters out at its default
-setting.</p>
+<code>"Severe"</code> group – 20 patients against 381 and 199 – which is what the
+minimum-n control is there to be tried on: it is drawn at the default
+minimum of 10, and disappears from the figures, with a reason, as soon as
+the minimum is raised past 20.</p>
 <p>The data are simulated. They describe no real patients and support no
 clinical conclusion.</p>
 <p><code>fu_days</code> and <code>death</code> make the data usable for a Kaplan-Meier curve, and

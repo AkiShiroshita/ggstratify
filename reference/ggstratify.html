@@ -62,7 +62,10 @@ already read into your session and already of the types you mean. A file
 path is not accepted; see <em>Before you start</em>. Whatever it is given becomes
 a plain <code>data.table</code>, so a grouped <code>tibble</code> is described as its rows, not
 as its groups. The object is copied, never modified in place, and its name
-is what the generated code refers to it by.</p></dd>
+is what the generated code refers to it by – so pass a named object,
+rather than an expression: <code>ggstratify(head(cohort))</code> is described
+perfectly well, but the code it prints says <code>d &lt;- mydata</code>, because
+<code>head(cohort)</code> is not a name.</p></dd>
 
 
 <dt id="arg-launch-browser">launch.browser<a class="anchor" aria-label="anchor" href="#arg-launch-browser"></a></dt>

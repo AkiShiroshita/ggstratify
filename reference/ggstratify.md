@@ -21,7 +21,10 @@ ggstratify(dataset, launch.browser = TRUE, ...)
   is not accepted; see *Before you start*. Whatever it is given becomes
   a plain `data.table`, so a grouped `tibble` is described as its rows,
   not as its groups. The object is copied, never modified in place, and
-  its name is what the generated code refers to it by.
+  its name is what the generated code refers to it by – so pass a named
+  object, rather than an expression: `ggstratify(head(cohort))` is
+  described perfectly well, but the code it prints says `d <- mydata`,
+  because `head(cohort)` is not a name.
 
 - launch.browser:
 

@@ -69,8 +69,10 @@ Simulated by `data-raw/epi_cohort.R`.
 Two features are deliberate. `site` declares a fourth level, `"Site D"`,
 that recruited nobody, so stratifying by `site` produces a stratum with
 `n = 0`; the app lists it and draws no figure. `severity` has a small
-`"Severe"` group, which the minimum-n rule filters out at its default
-setting.
+`"Severe"` group – 20 patients against 381 and 199 – which is what the
+minimum-n control is there to be tried on: it is drawn at the default
+minimum of 10, and disappears from the figures, with a reason, as soon
+as the minimum is raised past 20.
 
 The data are simulated. They describe no real patients and support no
 clinical conclusion.
