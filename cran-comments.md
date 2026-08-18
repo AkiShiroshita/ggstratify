@@ -1,29 +1,33 @@
 ## Test environments
 
 * Windows 11 x64, R 4.6.0 (2026-04-24 ucrt) -- local, `R CMD check --as-cran`
-* win-builder, R-release -- `devtools::check_win_release()`
+* win-builder, R-release (Windows Server 2022 x64 build 20348,
+  x86_64-w64-mingw32), R 4.6.1 (2026-06-24 ucrt) --
+  `devtools::check_win_release()` (2026-08-18)
 * win-builder, R-devel -- `devtools::check_win_devel()`
 * win-builder, R-oldrelease -- `devtools::check_win_oldrelease()`
 * Posit Cloud / Linux (R 4.6.1 on Ubuntu 24.04.4 LTS (x86_64))
-* Windows Server (Windows Server 2022 Standard (Version 21H2), x86_64)
 * R-hub v2 / Ubuntu 24.04.4 LTS (x86_64-pc-linux-gnu), R-devel (2026-06-21 r90185)
 * R-hub v2 / macOS Sequoia 15.7.7 (x86_64-apple-darwin20), R-devel (2026-06-24 r90190)
 * R-hub v2 / Windows Server 2022 (x86_64-w64-mingw32), R-devel (2026-08-15 r90413 ucrt)
 
 ## R CMD check results
 
-0 errors and 0 warnings everywhere.
+0 errors | 0 warnings | 1 NOTE
 
-The three R-hub environments do not run `checking CRAN incoming feasibility`
-and are clean: 0 NOTEs. Every other environment reports that one NOTE, and it
-has two parts, both expected:
+win-builder R-release (above) finished with Status: 1 NOTE. The three R-hub
+environments do not run `checking CRAN incoming feasibility` and are clean:
+0 NOTEs. Every other environment that runs that check reports the same NOTE,
+which has two parts, both expected:
 
 * *New submission.* This is the package's first release.
-* *Possibly misspelled words in DESCRIPTION: Kaplan.* "Kaplan" is a surname:
-  the DESCRIPTION describes the Kaplan-Meier estimator, after Edward L. Kaplan
-  and Paul Meier. The spelling is correct.
+* *Possibly misspelled words in DESCRIPTION: Kaplan (29:39).* "Kaplan" is a
+  surname: the DESCRIPTION describes the Kaplan-Meier estimator, after
+  Edward L. Kaplan and Paul Meier. The spelling is correct.
 
 `R CMD check` reports no unstated dependencies in the tests or the vignette.
+Examples, tests (`testthat.R`), vignette rebuild, and both PDF and HTML
+manuals all passed on win-builder R-release.
 
 ## Accepted input types
 
