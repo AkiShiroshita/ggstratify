@@ -59,15 +59,34 @@ gs_ui <- function() {
         ),
 
         bslib::accordion_panel(
-          "Categorize",
+          "Derive a variable",
           shiny::helpText(
-            "Turn a continuous variable into groups. The new variable can be",
-            "used as a layer like any other categorical variable"
+            "Make a new categorical variable out of one you already have.",
+            "It can then be used as a layer like any other categorical",
+            "variable"
           ),
-          shiny::selectInput("cut_var", "Continuous variable", choices = NULL),
           shiny::selectInput("cut_method", "How", choices = GS_CUT_METHODS),
+          # One selector, not one per method: the server swaps its choices and
+          # its label as the method changes. A second hidden selectInput would
+          # still be an input, still send a value, and give the server two
+          # answers to one question.
+          shiny::selectInput("cut_var", "Continuous variable", choices = NULL),
           shiny::conditionalPanel(
-            condition = "input.cut_method != 'breaks'",
+            condition = "input.cut_method == 'missing'",
+            shiny::helpText(
+              "Two groups: the rows where this variable has a value, and the",
+              "rows where it does not. Every row lands in one of them, so",
+              "none is excluded.",
+              "Use it to describe another variable within each group -- how",
+              "the people whose CRP was never measured differ from the people",
+              "whose CRP was. Describing the variable itself within its own",
+              "missingness leaves the Missing group with nothing to draw; the",
+              "app says so under Layers when you ask for that."
+            )
+          ),
+          shiny::conditionalPanel(
+            condition = sprintf("%s.includes(input.cut_method)",
+                                gs_js_array(GS_GROUP_COUNT_METHODS)),
             shiny::numericInput("cut_n", "Number of groups", value = 4,
                                 min = 2, max = 20, step = 1)
           ),
@@ -80,7 +99,7 @@ gs_ui <- function() {
             )
           ),
           shiny::textInput("cut_name", "New variable name"),
-          shiny::actionButton("add_cut", "Add categorized variable",
+          shiny::actionButton("add_cut", "Add the variable",
                               class = "btn-secondary w-100",
                               icon = shiny::icon("plus")),
           shiny::uiOutput("cuts_list")
@@ -336,6 +355,40 @@ gs_ui <- function() {
 
     shiny::tags$head(shiny::tags$style(shiny::HTML(GS_CSS))),
     shiny::tags$script(shiny::HTML(GS_COPY_JS))
+  )
+}
+
+#' The label the Derive-a-variable selector carries under a given method
+#'
+#' The pool it offers changes with the method -- see `gs_selector_choices()`
+#' -- and a label that still said "Continuous variable" over a list of factors
+#' and dates would be describing the wrong list.
+#' @keywords internal
+#' @noRd
+gs_cut_var_label <- function(method) {
+  if (identical(method, "missing")) "Variable" else "Continuous variable"
+}
+
+#' The warning shown when a variable is split by its own missingness
+#'
+#' Built here rather than in the server so that the sentence, and the decision
+#' to draw the figure anyway, sit next to the help text in the sidebar that
+#' promises it.
+#'
+#' @param cuts The offending cuts, from `gs_self_missing_cuts()`.
+#' @return A `div`, or `NULL` when there is nothing to say.
+#' @keywords internal
+#' @noRd
+gs_self_missing_alert <- function(cuts) {
+  if (!length(cuts)) return(NULL)
+  said <- vapply(cuts, function(cut) {
+    sprintf("%s is drawn within %s, so its %s group has no %s to draw",
+            cut$var, cut$new, GS_MISSING_LABEL, cut$var)
+  }, character(1L))
+  shiny::div(
+    class = "alert alert-warning py-2 px-3 small mt-2",
+    paste0(paste(said, collapse = "; "),
+           ". Describe another variable within it instead.")
   )
 }
 

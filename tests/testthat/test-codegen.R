@@ -471,3 +471,42 @@ test_that("gs_n formats numbers without scientific notation", {
   expect_equal(gs_n(1e6), "1000000")
   expect_equal(gs_n(NA), "NA")
 })
+
+test_that("the generated script derives a missingness variable the same way", {
+  # The single implementation rule: what the app holds is what the printed
+  # script produces, because the app runs the very line it prints.
+  dt <- gs_prepare_data(iris)
+  dt[1:20, Sepal.Length := NA_real_]
+  cut <- gs_cut("Sepal.Length", method = "missing")
+
+  line <- gs_code_cut_line(cut, "dt")
+  expect_equal(
+    line,
+    paste0("dt[, Sepal.Length_missing := factor(is.na(Sepal.Length), ",
+           "levels = c(FALSE, TRUE), labels = c(\"Observed\", \"Missing\"))]"))
+
+  in_app <- gs_apply_cuts(dt, list(cut))$Sepal.Length_missing
+  from_script <- local({
+    d <- data.table::copy(dt)
+    eval(parse(text = gs_code_cut_line(cut, "d")))
+    d$Sepal.Length_missing
+  })
+  expect_equal(in_app, from_script)
+  expect_equal(as.integer(table(in_app)), c(130L, 20L))
+})
+
+test_that("a missingness variable keeps every row through the layer stage", {
+  # The block that excludes rows with no value for a layer variable is emitted
+  # whatever the layer is; a missingness indicator simply gives it nothing to
+  # exclude, which is what makes the two groups add up to the whole data.
+  dt <- gs_prepare_data(iris)
+  dt[1:20, Sepal.Length := NA_real_]
+  cut <- gs_cut("Sepal.Length", method = "missing")
+  spec <- gs_spec(plot_type = "Boxplot", y = "Petal.Length",
+                  facet = "Sepal.Length_missing", cuts = list(cut))
+
+  p <- gs_eval_plot(gs_code_figure(spec, "d"),
+                    gs_apply_cuts(dt, list(cut)))
+  expect_equal(nrow(p$data), nrow(dt))
+  expect_equal(nlevels(droplevels(p$data$.facet_label)), 2L)
+})

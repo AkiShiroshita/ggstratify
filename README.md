@@ -80,6 +80,25 @@ ggstratify(iris)                 # data.frame / tibble / data.table / matrix
 `Boxplot` / `Density` / `Dot + Error` / `Dotplot` / `Histogram` /
 `Kaplan-Meier curve` / `Line` / `Scatter` / `Violin`
 
+## Derived variables
+
+**Derive a variable** makes a new categorical variable out of one you already
+have, which can then be used as a layer like any other. A continuous variable
+becomes quantile groups, equal-width bins or your own cut points. A variable
+of any type becomes **missing vs observed**:
+
+```r
+dat$crp_missing <- factor(is.na(dat$crp), levels = c(FALSE, TRUE),
+                          labels = c("Observed", "Missing"))
+```
+
+Stratify by that to describe another variable within each group -- how the
+people whose CRP was never measured differ from the people whose CRP was.
+Every row lands in one of the two groups, so none is excluded.
+
+`crp` in the bundled `epi_cohort` is incomplete on purpose, so
+`ggstratify(epi_cohort)` is enough to try it.
+
 ## Acknowledgements
 
 - Claude Code (Anthropic's Claude Opus 5) assisted with adding notes, testing and
