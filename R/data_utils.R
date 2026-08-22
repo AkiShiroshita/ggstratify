@@ -163,10 +163,13 @@ gs_vars_of <- function(info, role = c("continuous", "categorical", "stratify",
 #' for, looks exactly like a figure that was asked for.
 #'
 #' @param info Output of `gs_classify_vars()`.
+#' @param cut_method The method currently chosen under **Derive a variable**,
+#'   which decides what its variable selector may be set to. Only `"missing"`
+#'   widens the pool; see the `cut_var` element below.
 #' @return A named list of character vectors, one per `selectInput` id.
 #' @keywords internal
 #' @noRd
-gs_selector_choices <- function(info) {
+gs_selector_choices <- function(info, cut_method = "quantile") {
   all_vars <- gs_vars_of(info, "all")
   continuous <- gs_vars_of(info, "continuous")
   # Fall back to every variable when nothing looks continuous, so the app is
@@ -186,8 +189,11 @@ gs_selector_choices <- function(info) {
     # survival::Surv() needs a numeric time and a two-valued event indicator.
     timevar = gs_vars_of(info, "numeric"),
     eventvar = gs_vars_of(info, "event"),
-    # Categorizing a variable that is already categorical would do nothing.
-    cut_var = continuous
+    # Categorizing a variable that is already categorical would do nothing --
+    # except when the question is whether it has a value at all, which is
+    # worth asking of a factor, a character column or a date just as much as
+    # of a number.
+    cut_var = if (identical(cut_method, "missing")) all_vars else continuous
   )
   lapply(out, function(x) c(GS_NONE, x))
 }

@@ -326,8 +326,11 @@ test_that("a typed axis range reaches the figure and the code beside it", {
 
 test_that("the server draws a line plot and writes the ID into the code", {
   # Repeated measurements per patient, which is what a line plot describes.
+  # The patients with no CRP are dropped here: epi_cohort leaves that column
+  # incomplete on purpose, and this test is about lines, not about gaps.
   visits <- data.table::rbindlist(lapply(1:6, function(v) {
-    d <- data.table::as.data.table(epi_cohort)[, .(id, sex, treatment, crp)]
+    d <- data.table::as.data.table(epi_cohort)[!is.na(crp),
+                                               .(id, sex, treatment, crp)]
     d[, visit := v]
     d[, crp := crp * (1 - 0.15 * v)]
     d
@@ -744,4 +747,101 @@ test_that("the JavaScript the conditionalPanels are built from is escaped", {
   expect_equal(gs_js_type(GS_KM),
                sprintf("input.plot_type == '%s'", GS_KM))
   expect_equal(gs_js_has_facet(), sprintf("input.facet != '%s'", GS_NONE))
+})
+
+test_that("a missingness variable can be derived and stratified on in the app", {
+  outdir <- file.path(tempdir(), "gs-test-missing")
+  unlink(outdir, recursive = TRUE)
+
+  # severity is a factor, so it is offered only under "missing" -- the pool
+  # the method chooses is tested in test-categorize.R; here it has to survive
+  # the whole way to a figure on disk.
+  gappy <- data.table::as.data.table(epi_cohort)
+  gappy[seq_len(120L), severity := NA]
+
+  shiny::testServer(gs_server(gappy), {
+    do.call(session$setInputs, gs_test_inputs(outdir))
+    session$setInputs(yvar = "los_days", xvar = GS_NONE,
+                      strat_vars = character(), data_name = "gappy",
+                      cut_var = "severity", cut_method = "missing",
+                      cut_name = "severity_missing")
+    session$elapse(500)
+    session$setInputs(add_cut = 1)
+    session$elapse(500)
+
+    expect_length(cuts_used(), 1L)
+    expect_equal(levels(dat()$severity_missing), c("Observed", "Missing"))
+    expect_true("severity_missing" %in% gs_vars_of(info(), "stratify"))
+    expect_match(output$code,
+                 "severity_missing := factor(is.na(severity)", fixed = TRUE)
+
+    session$setInputs(strat_vars = "severity_missing")
+    session$elapse(500)
+
+    st <- strata()
+    expect_equal(nrow(st), 2L)
+    expect_setequal(st$level, c("Observed", "Missing"))
+    # Every row is placed: the two groups add up, and nothing is excluded for
+    # having no value for the layer variable.
+    expect_equal(sum(st$n), nrow(gappy))
+    expect_equal(nrow(missing_report()), 0L)
+
+    expect_no_error(output$plot)
+    session$setInputs(export = 1)
+  })
+
+  expect_equal(sort(list.files(outdir, pattern = "[.]png$")),
+               c("boxplot_severity_missing_Missing.png",
+                 "boxplot_severity_missing_Observed.png"))
+  unlink(outdir, recursive = TRUE)
+})
+
+test_that("describing a variable within its own missingness is warned about", {
+  gappy <- data.table::as.data.table(epi_cohort)
+  gappy[seq_len(120L), bmi := NA_real_]
+
+  # The arrangement under test is the one where the Missing figure has nothing
+  # to draw, so rendering its preview makes ggplot2 report the rows it dropped
+  # -- the very consequence the app is warning about. Shiny renders outputs
+  # inside its own promise domain, out of reach of a calling handler placed in
+  # here, so the warning is suppressed around the session as a whole. Errors
+  # still surface, and the app's own sentence is asserted below.
+  suppressWarnings(shiny::testServer(gs_server(gappy), {
+    do.call(session$setInputs, gs_test_inputs(tempdir()))
+    session$setInputs(yvar = "bmi", xvar = GS_NONE, strat_vars = character(),
+                      cut_var = "bmi", cut_method = "missing",
+                      cut_name = "bmi_missing")
+    session$elapse(500)
+    session$setInputs(add_cut = 1)
+    session$elapse(500)
+
+    # Describing something else within the split says nothing.
+    session$setInputs(yvar = "los_days", strat_vars = "bmi_missing")
+    session$elapse(500)
+    expect_false(any(grepl("no bmi to draw",
+                           as.character(output$layer_summary), fixed = TRUE)))
+
+    # Describing bmi within it does.
+    session$setInputs(yvar = "bmi")
+    session$elapse(500)
+    expect_true(any(grepl("no bmi to draw",
+                          as.character(output$layer_summary), fixed = TRUE)))
+    # The figure is still drawn: the app reports the arrangement, it does not
+    # refuse it.
+    expect_no_error(output$plot)
+  }))
+})
+
+test_that("a variable with nothing missing is refused with a reason", {
+  shiny::testServer(gs_server(epi_cohort), {
+    do.call(session$setInputs, gs_test_inputs(tempdir()))
+    session$setInputs(cut_var = "age", cut_method = "missing",
+                      cut_name = "age_missing")
+    session$elapse(500)
+    session$setInputs(add_cut = 1)
+    session$elapse(500)
+
+    expect_length(cuts_used(), 0L)
+    expect_false("age_missing" %in% names(dat()))
+  })
 })

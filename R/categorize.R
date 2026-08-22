@@ -8,10 +8,14 @@
 
 #' Build one categorization rule with defaults filled in
 #'
-#' @param var Name of the continuous column to categorize.
-#' @param new Name of the derived column. Defaults to `<var>_cat`.
+#' @param var Name of the column to categorize. Continuous for every method
+#'   but `"missing"`, which reads no values and so takes a column of any type.
+#' @param new Name of the derived column. Defaults to `<var>_cat`, or to
+#'   `<var>_missing` for `method = "missing"`.
 #' @param method One of `"quantile"` (equal-sized groups), `"equal"`
-#'   (equal-width bins) or `"breaks"` (user-supplied cut points).
+#'   (equal-width bins), `"breaks"` (user-supplied cut points) or `"missing"`
+#'   (two groups: the rows where the column has a value and the rows where it
+#'   does not).
 #' @param n Number of groups, for the first two methods.
 #' @param breaks Internal cut points, for `method = "breaks"`. They are
 #'   interpreted as boundaries between open-ended bins, so `65` gives
@@ -27,7 +31,7 @@ gs_cut <- function(var, new = NULL, method = "quantile", n = 4L,
   breaks <- suppressWarnings(as.numeric(breaks))
   breaks <- sort(unique(breaks[is.finite(breaks)]))
   var <- as.character(var)
-  if (is.null(new) || !nzchar(new)) new <- paste0(var, "_cat")
+  if (is.null(new) || !nzchar(new)) new <- paste0(var, GS_CUT_SUFFIX[[method]])
   # n is floored at 2: one group is not a categorization, and every caller
   # that builds a cut goes through here, so nothing downstream has to carry
   # the case. gs_check_cut() still holds the lower bound as well, for a cut
@@ -65,8 +69,9 @@ gs_parse_breaks <- function(x) {
 #' A default name for a derived column that does not clash with the data
 #' @keywords internal
 #' @noRd
-gs_cut_name <- function(var, taken = character()) {
-  base <- paste0(var, "_cat")
+gs_cut_name <- function(var, taken = character(), method = "quantile") {
+  suffix <- GS_CUT_SUFFIX[[match.arg(method, unname(GS_CUT_METHODS))]]
+  base <- paste0(var, suffix)
   if (!base %in% taken) return(base)
   # Unbounded: a capped search that gives up and returns `base` would hand
   # back the very name it was asked to avoid. The loop ends on the first free
@@ -79,6 +84,18 @@ gs_cut_name <- function(var, taken = character()) {
   }
 }
 
+#' The pattern that recognises a name this app suggested
+#'
+#' Used to decide whether the name box may be overwritten: a name the app put
+#' there is replaced as the source variable or the method changes, and a name
+#' the user typed is left alone. Built from `GS_CUT_SUFFIX` so that adding a
+#' method cannot leave the two out of step.
+#' @keywords internal
+#' @noRd
+gs_suggested_name_pattern <- function() {
+  paste0("(", paste(unique(GS_CUT_SUFFIX), collapse = "|"), ")[0-9]*$")
+}
+
 #' A one-line human description of a cut, for the sidebar list
 #' @keywords internal
 #' @noRd
@@ -87,7 +104,8 @@ gs_cut_describe <- function(cut) {
     cut$method,
     quantile = sprintf("%d quantile groups", cut$n),
     equal    = sprintf("%d equal-width bins", cut$n),
-    breaks   = paste0("cut at ", paste(gs_n_vec(cut$breaks), collapse = ", "))
+    breaks   = paste0("cut at ", paste(gs_n_vec(cut$breaks), collapse = ", ")),
+    missing  = "missing vs observed"
   )
   sprintf("%s <- %s (%s)", cut$new, cut$var, how)
 }
@@ -170,7 +188,9 @@ gs_check_cut <- function(dt, cut) {
     return(sprintf("'%s' is not a column in the data.", cut$var))
   }
   problems <- character()
-  if (!is.numeric(dt[[cut$var]])) {
+  # "missing" reads no values, so it has nothing to require of the type. Every
+  # other method cuts the values themselves and needs numbers to cut.
+  if (cut$method %in% GS_VALUE_CUT_METHODS && !is.numeric(dt[[cut$var]])) {
     problems <- c(problems, sprintf(
       "'%s' is not numeric; only numeric variables can be categorized.",
       cut$var))
@@ -197,8 +217,21 @@ gs_check_cut <- function(dt, cut) {
   if (!cut$new %in% names(trial)) {
     return(sprintf("'%s' could not be categorized this way.", cut$var))
   }
-  used <- sum(table(trial[[cut$new]]) > 0L)
+  counts <- table(trial[[cut$new]])
+  used <- sum(counts > 0L)
   if (used < 2L) {
+    # One group is not a stratification. Which one it is says what went wrong,
+    # and for "missing" it is the answer to the question rather than an error:
+    # the variable is complete.
+    if (identical(cut$method, "missing")) {
+      return(if (counts[[GS_MISSING_LABEL]] == 0L) {
+        sprintf("'%s' has no missing values, so this would make one group, not two.",
+                cut$var)
+      } else {
+        sprintf("'%s' is missing in every row, so this would make one group, not two.",
+                cut$var)
+      })
+    }
     return(sprintf(
       "This gives fewer than two non-empty groups of '%s'; try fewer groups or other cut points.",
       cut$var))

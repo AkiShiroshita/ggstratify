@@ -110,7 +110,15 @@ gs_facet_col <- function(spec, facet_strata = FALSE) {
 
 # --- categorized variables ---------------------------------------------------
 
-#' The `cut()` expression for one categorization rule
+#' The expression for one categorization rule
+#'
+#' `"missing"` is the one method that does not read the column's values. It
+#' asks only whether there is a value, which is a question any type answers,
+#' and it answers it for every row: `is.na()` is never itself `NA`, so the
+#' derived column never costs a row at the layer stage.
+#'
+#' The labels are spelled out rather than left as `FALSE`/`TRUE` because they
+#' become axis text, strip text and file names.
 #' @keywords internal
 #' @noRd
 gs_cut_expr <- function(cut) {
@@ -124,6 +132,9 @@ gs_cut_expr <- function(cut) {
     equal    = sprintf("cut(%s, breaks = %s)", v, gs_n(cut$n)),
     breaks   = sprintf("cut(%s, breaks = c(-Inf, %s, Inf))", v,
                        paste(gs_n_vec(cut$breaks), collapse = ", ")),
+    missing  = sprintf(paste0("factor(is.na(%s), levels = c(FALSE, TRUE), ",
+                              "labels = c(%s, %s))"),
+                       v, gs_dq(GS_OBSERVED_LABEL), gs_dq(GS_MISSING_LABEL)),
     stop("Unknown cut method: ", cut$method, call. = FALSE)
   )
 }
@@ -137,15 +148,15 @@ gs_code_cut_line <- function(cut, data_sym = "dt") {
 
 #' The block that adds every derived column, or `character(0)`
 #'
-#' Emitted once, straight after the data is loaded, so that a categorized
-#' variable can be used anywhere a real column can -- including as a
-#' stratifying variable.
+#' Emitted once, straight after the data is loaded, so that a derived variable
+#' can be used anywhere a real column can -- including as a stratifying
+#' variable.
 #' @keywords internal
 #' @noRd
 gs_code_cuts <- function(cuts, data_sym = "dt") {
   cuts <- gs_as_cuts(cuts)
   if (!length(cuts)) return(character())
-  c("# Categorized continuous variables.",
+  c("# Derived variables.",
     vapply(cuts, gs_code_cut_line, character(1L), data_sym = data_sym),
     "")
 }

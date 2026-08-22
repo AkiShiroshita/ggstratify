@@ -15,7 +15,8 @@ A data frame with 600 rows and 11 columns:
 \item{treatment}{Factor: \code{"Control"}, \code{"Low dose"}, \code{"High dose"}.}
 \item{severity}{Factor: \code{"Mild"}, \code{"Moderate"}, \code{"Severe"}.}
 \item{bmi}{Body mass index, kg/m^2.}
-\item{crp}{C-reactive protein, mg/L.}
+\item{crp}{C-reactive protein, mg/L. \code{NA} for 122 patients who were not
+tested, more often the milder ones.}
 \item{los_days}{Length of stay in days.}
 \item{fu_days}{Days of follow-up, to death or to censoring. Censoring is
 by dropout or by the end of the study at 365 days.}
@@ -34,24 +35,33 @@ motivate this package: a few continuous measurements crossed with several
 categorical variables worth stratifying on.
 }
 \details{
-Two features are deliberate. \code{site} declares a fourth level, \code{"Site D"},
+Three features are deliberate. \code{site} declares a fourth level, \code{"Site D"},
 that recruited nobody, so stratifying by \code{site} produces a stratum with
 \code{n = 0}; the app lists it and draws no figure. \code{severity} has a small
 \code{"Severe"} group -- 20 patients against 381 and 199 -- which is what the
 minimum-n control is there to be tried on: it is drawn at the default
 minimum of 10, and disappears from the figures, with a reason, as soon as
-the minimum is raised past 20.
+the minimum is raised past 20. \code{crp} is the only column with missing
+values, and they are not missing at random: the milder the presentation,
+the more often the measurement was left undone, so 105 of the 381 mild
+patients have no CRP against none of the 20 severe ones. Deriving \emph{missing
+vs observed} from \code{crp} and describing another variable within it is what
+that pattern is there for.
 
 The data are simulated. They describe no real patients and support no
 clinical conclusion.
 
-\code{fu_days} and \code{death} make the data usable for a Kaplan-Meier curve, and
-\code{age} for the categorization controls.
+\code{fu_days} and \code{death} make the data usable for a Kaplan-Meier curve, \code{age}
+for the methods that cut a continuous variable into groups, and \code{crp} for
+the one that splits a variable by whether it has a value.
 }
 \examples{
 str(epi_cohort)
 
 # The empty stratum that the app reports with n = 0.
 table(epi_cohort$site)
+
+# Who was not tested, by how ill they were.
+table(epi_cohort$severity, is.na(epi_cohort$crp))
 }
 \keyword{datasets}
