@@ -50,9 +50,22 @@ object.
 `tibble` is used only by that one test and is declared in `Suggests`, guarded
 by `skip_if_not_installed()`; the package itself does not depend on it.
 
+## Writing to the file system
+
+The package writes nothing on load or on attach, and no example or vignette
+chunk writes at all. Every test that exercises the export path writes under
+`tempdir()` and removes what it wrote.
+
+The one place the package writes a file the user keeps is the application's
+Export button. The output folder is a text field in the UI, filled in with
+`figures` and editable before anything is written, and the folder is created
+and the figures written only when the user presses Export in an interactive
+session. Nothing is written when the application merely opens, and the full
+path of what was written is reported back on screen afterwards.
+
 ## Test suite
 
-`devtools::test()` on Windows 11 x64 with R 4.6.0: 620 passing, 0 failures,
+`devtools::test()` on Windows 11 x64 with R 4.6.0: 656 passing, 0 failures,
 0 warnings, 0 skips.
 
 The preview subsampling caps are one million rows (scatter and line plots) and
