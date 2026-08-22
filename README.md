@@ -87,15 +87,6 @@ have, which can then be used as a layer like any other. A continuous variable
 becomes quantile groups, equal-width bins or your own cut points. A variable
 of any type becomes **missing vs observed**:
 
-```r
-dat$crp_missing <- factor(is.na(dat$crp), levels = c(FALSE, TRUE),
-                          labels = c("Observed", "Missing"))
-```
-
-Stratify by that to describe another variable within each group -- how the
-people whose CRP was never measured differ from the people whose CRP was.
-Every row lands in one of the two groups, so none is excluded.
-
 `crp` in the bundled `epi_cohort` is incomplete on purpose, so
 `ggstratify(epi_cohort)` is enough to try it.
 
