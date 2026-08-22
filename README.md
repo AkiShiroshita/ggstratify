@@ -85,7 +85,8 @@ ggstratify(iris)                 # data.frame / tibble / data.table / matrix
 **Derive a variable** makes a new categorical variable out of one you already
 have, which can then be used as a layer like any other. A continuous variable
 becomes quantile groups, equal-width bins or your own cut points. A variable
-of any type becomes **missing vs observed**:
+of any type becomes **missing vs observed**: the rows where it has a value
+and the rows where it does not.
 
 `crp` in the bundled `epi_cohort` is incomplete on purpose, so
 `ggstratify(epi_cohort)` is enough to try it.
