@@ -569,7 +569,10 @@ gs_code_line_geoms <- function(spec, alpha) {
     sprintf("geom_line(alpha = %s)", alpha)
   }
   if (isTRUE(spec$line_points)) {
-    out <- c(out, sprintf("geom_point(alpha = %s)", alpha))
+    # Smaller than ggplot2's default: the marks are there to say where the
+    # line was measured, and at the default size a dense set of them covers
+    # the line they belong to.
+    out <- c(out, sprintf("geom_point(size = 1, alpha = %s)", alpha))
   }
   out
 }

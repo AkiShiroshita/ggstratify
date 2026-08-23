@@ -52,6 +52,12 @@ gs_ui <- function() {
               "Leave this empty when each x value already has one value to",
               "draw -- a mean per visit, say. Choose the subject identifier",
               "to draw one line per subject instead."
+            ),
+            shiny::checkboxInput("line_points", "Mark the observations",
+                                 FALSE),
+            shiny::helpText(
+              "Adds geom_point() on top of the lines, so that the x values",
+              "each line was actually drawn from can be seen."
             )
           ),
           shiny::selectInput("group", "Group (colour by this variable)",
@@ -161,10 +167,6 @@ gs_ui <- function() {
             condition = "input.plot_type == 'Density'",
             shiny::sliderInput("bw_adjust", "Bandwidth adjustment",
                                min = 0.1, max = 3, value = 1, step = 0.1)
-          ),
-          shiny::conditionalPanel(
-            condition = gs_js_type(GS_LINE),
-            shiny::checkboxInput("line_points", "Mark the observations", FALSE)
           ),
           shiny::conditionalPanel(
             condition = sprintf("%s.includes(input.plot_type)",

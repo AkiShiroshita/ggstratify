@@ -350,7 +350,7 @@ test_that("the server draws a line plot and writes the ID into the code", {
 
     expect_match(output$code, "geom_line(aes(group = id), alpha = 0.6)",
                  fixed = TRUE)
-    expect_match(output$code, "geom_point(alpha = 0.6)", fixed = TRUE)
+    expect_match(output$code, "geom_point(size = 1, alpha = 0.6)", fixed = TRUE)
     expect_match(output$code, 'geom_smooth(method = "loess", formula = y ~ x, span = 0.8',
                  fixed = TRUE)
 

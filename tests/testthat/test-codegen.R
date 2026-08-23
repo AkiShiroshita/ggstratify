@@ -81,7 +81,7 @@ test_that("the observations are marked only when asked for", {
   with_points <- paste(gs_code_plot(gs_spec(plot_type = GS_LINE, x = "visit",
                                             y = "crp", line_points = TRUE)),
                        collapse = "\n")
-  expect_match(with_points, "geom_point(alpha = 0.6)", fixed = TRUE)
+  expect_match(with_points, "geom_point(size = 1, alpha = 0.6)", fixed = TRUE)
 
   without <- paste(gs_code_plot(gs_spec(plot_type = GS_LINE, x = "visit",
                                         y = "crp")), collapse = "\n")
