@@ -73,12 +73,39 @@ test_that("gs_classify_vars separates continuous from categorical", {
   expect_true("Sepal.Width" %in% gs_vars_of(info, "continuous"))
 })
 
-test_that("a coded numeric with few levels counts as categorical", {
+test_that("a coded numeric with few levels can be stratified by and plotted", {
   dt <- data.table::data.table(grp = rep(1:3, each = 20), y = rnorm(60))
   info <- gs_classify_vars(dt)
   expect_true(info[var == "grp", is_categorical])
   expect_true(info[var == "grp", can_stratify])
+  # The two are separate questions, not a partition: a numeric column is a
+  # measurement whatever its distinct values are counted at.
+  expect_true(info[var == "grp", is_continuous])
   expect_true(info[var == "y", is_continuous])
+})
+
+test_that("a coarsely measured numeric is continuous, an indicator is not", {
+  dt <- data.table::data.table(
+    # Whole years over a narrow range: few distinct values, still an age.
+    age = rep(40:44, each = 12),
+    visit = rep(1:3, times = 20),
+    dead = rep(0:1, each = 30),
+    flag = rep(c(TRUE, FALSE), each = 30),
+    site = rep(letters[1:4], each = 15)
+  )
+  info <- gs_classify_vars(dt)
+
+  expect_true(info[var == "age", is_continuous])
+  expect_true(info[var == "visit", is_continuous])
+  # Two values cannot describe a spread, so an indicator stays categorical.
+  expect_false(info[var == "dead", is_continuous])
+  expect_false(info[var == "flag", is_continuous])
+  expect_false(info[var == "site", is_continuous])
+
+  expect_setequal(gs_vars_of(info, "continuous"), c("age", "visit"))
+  # Each is still few-levelled enough to split figures by.
+  expect_setequal(gs_vars_of(info, "stratify"),
+                  c("age", "visit", "dead", "flag", "site"))
 })
 
 test_that("high-cardinality variables are not offered for stratification", {

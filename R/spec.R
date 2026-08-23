@@ -405,8 +405,8 @@ gs_validate_spec <- function(spec, info = NULL) {
         needs_cont, type))
     }
     # Only Scatter is held to a continuous X. A line plot's X is time, which
-    # is as often a date or a visit number -- neither of which is classified
-    # as continuous -- as it is a measurement.
+    # is as often a date -- which is not classified as continuous -- as it is
+    # a measurement.
     if (type == "Scatter" && nzchar(spec$x) && !spec$x %in% continuous) {
       problems <- c(problems,
                     sprintf("Scatter expects a continuous X-variable; '%s' is not.", spec$x))
