@@ -39,3 +39,4 @@
 
 # Test-generated graphics
 (^|/)Rplots\.(ps|pdf)$
+^\.claude$
