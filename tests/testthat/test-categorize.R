@@ -184,3 +184,94 @@ test_that("a cut that cannot be applied is reported, not thrown", {
   expect_true(length(attr(out, "gs_cut_error")) > 0L)
   expect_false("x_cat" %in% names(out))
 })
+
+# --- missing vs observed -----------------------------------------------------
+
+# A cohort with the gaps a real one has: a lab value that was not always
+# measured, and a severity grade that was not always recorded.
+gappy <- function() {
+  dt <- cohort()
+  dt[seq_len(150L), bmi := NA_real_]
+  dt[seq(2L, 160L, by = 2L), severity := NA]
+  dt
+}
+
+test_that("a missingness rule names itself after the question it asks", {
+  cut <- gs_cut("bmi", method = "missing")
+  expect_equal(cut$new, "bmi_missing")
+  expect_equal(gs_cut_name("bmi", character(), "missing"), "bmi_missing")
+  expect_equal(gs_cut_name("bmi", "bmi_missing", "missing"), "bmi_missing2")
+  expect_equal(gs_cut_describe(cut), "bmi_missing <- bmi (missing vs observed)")
+})
+
+test_that("the name box is refreshed for a suggestion under either suffix", {
+  # The server overwrites a name it suggested and leaves a typed one alone, so
+  # the pattern has to know both suffixes -- and no others.
+  pat <- gs_suggested_name_pattern()
+  expect_true(grepl(pat, "bmi_cat"))
+  expect_true(grepl(pat, "bmi_cat2"))
+  expect_true(grepl(pat, "bmi_missing"))
+  expect_true(grepl(pat, "bmi_missing3"))
+  expect_false(grepl(pat, "measured"))
+})
+
+test_that("missingness splits the rows in two and loses none of them", {
+  dt <- gappy()
+  out <- gs_apply_cuts(dt, list(gs_cut("bmi", method = "missing"),
+                                gs_cut("severity", method = "missing")))
+
+  expect_equal(levels(out$bmi_missing), c("Observed", "Missing"))
+  expect_equal(as.integer(table(out$bmi_missing)),
+               c(nrow(dt) - 150L, 150L))
+  # The whole point: the indicator itself is never absent, so no row is
+  # excluded at the layer stage for having no value for it.
+  expect_false(anyNA(out$bmi_missing))
+  expect_equal(nrow(gs_missing_report(out, c("bmi_missing", "severity_missing"))),
+               0L)
+})
+
+test_that("missingness is a question a non-numeric column can answer too", {
+  dt <- gappy()
+  # A factor is refused by the methods that cut values and accepted by the one
+  # that reads only whether there is a value.
+  expect_match(gs_check_cut(dt, gs_cut("severity", method = "quantile")),
+               "not numeric")
+  expect_equal(gs_check_cut(dt, gs_cut("severity", method = "missing")),
+               character())
+
+  dt[, when := as.Date("2026-01-01") + seq_len(.N)]
+  dt[1:10, when := NA]
+  dt[, note := c(rep(NA_character_, 10L), rep("seen", .N - 10L))]
+  expect_equal(gs_check_cut(dt, gs_cut("when", method = "missing")), character())
+  expect_equal(gs_check_cut(dt, gs_cut("note", method = "missing")), character())
+})
+
+test_that("a variable with nothing missing is refused, and says why", {
+  dt <- cohort()
+  expect_match(gs_check_cut(dt, gs_cut("age", method = "missing")),
+               "has no missing values")
+
+  dt[, blank := NA_real_]
+  expect_match(gs_check_cut(dt, gs_cut("blank", method = "missing")),
+               "missing in every row")
+})
+
+test_that("a missingness variable can be stratified on like any other", {
+  out <- gs_apply_cuts(gappy(), list(gs_cut("bmi", method = "missing")))
+  info <- gs_classify_vars(out)
+  expect_true(info[var == "bmi_missing", is_categorical])
+  expect_true("bmi_missing" %in% gs_vars_of(info, "stratify"))
+})
+
+test_that("the variable pool widens for missingness and narrows back", {
+  info <- gs_classify_vars(gs_apply_cuts(gappy(), list()))
+  # severity is a factor: worth asking whether it is there, not worth cutting.
+  expect_true("severity" %in% gs_selector_choices(info, "missing")$cut_var)
+  expect_false("severity" %in% gs_selector_choices(info, "quantile")$cut_var)
+  # age is continuous, so it is offered under both.
+  expect_true("age" %in% gs_selector_choices(info, "missing")$cut_var)
+  expect_true("age" %in% gs_selector_choices(info, "quantile")$cut_var)
+  # The label follows the pool.
+  expect_equal(gs_cut_var_label("missing"), "Variable")
+  expect_equal(gs_cut_var_label("quantile"), "Continuous variable")
+})

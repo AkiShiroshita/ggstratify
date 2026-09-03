@@ -52,12 +52,21 @@ gs_server <- function(dataset, data_name = "mydata") {
       if (!is.null(cur) && length(cur) == 1L && cur %in% choices) cur else GS_NONE
     }
 
-    shiny::observeEvent(info(), {
+    # The Derive-a-variable selector offers a different pool for "missing vs
+    # observed" than for the methods that cut values, so the method is a
+    # second reason to repopulate. Everything else keeps its selection through
+    # keep_or(); only a choice the new pool no longer contains -- a factor
+    # picked under "missing", after a switch back to quantiles -- falls back.
+    shiny::observeEvent(list(info(), input$cut_method), {
       nfo <- info()
-      choices <- gs_selector_choices(nfo)
+      method <- input$cut_method %||% "quantile"
+      choices <- gs_selector_choices(nfo, method)
       for (id in names(choices)) {
         shiny::updateSelectInput(session, id, choices = choices[[id]],
-                                 selected = keep_or(id, choices[[id]]))
+                                 selected = keep_or(id, choices[[id]]),
+                                 label = if (identical(id, "cut_var")) {
+                                   gs_cut_var_label(method)
+                                 })
       }
       shiny::updateCheckboxGroupInput(
         session, "strat_vars", choices = gs_stratify_choices(nfo),
@@ -69,15 +78,16 @@ gs_server <- function(dataset, data_name = "mydata") {
 
     # A name that does not collide with the data, refreshed as the source
     # variable changes but never overwriting something the user typed.
-    shiny::observeEvent(list(input$cut_var, cuts_used()), {
+    shiny::observeEvent(list(input$cut_var, input$cut_method, cuts_used()), {
       dt <- dat()
       shiny::req(input$cut_var)
       # Nothing chosen yet: there is no name to suggest.
       if (identical(input$cut_var, GS_NONE)) return()
-      suggested <- gs_cut_name(input$cut_var, names(dt))
+      method <- input$cut_method %||% "quantile"
+      suggested <- gs_cut_name(input$cut_var, names(dt), method)
       current <- input$cut_name %||% ""
       if (!nzchar(current) || current %in% names(dt) ||
-          grepl("_cat[0-9]*$", current)) {
+          grepl(gs_suggested_name_pattern(), current)) {
         shiny::updateTextInput(session, "cut_name", value = suggested)
       }
     })
@@ -86,8 +96,13 @@ gs_server <- function(dataset, data_name = "mydata") {
       dt <- dat()
       shiny::req(input$cut_var)
       if (identical(input$cut_var, GS_NONE)) {
-        shiny::showNotification("Choose the continuous variable to categorize.",
-                                type = "warning")
+        shiny::showNotification(
+          if (identical(input$cut_method, "missing")) {
+            "Choose the variable whose missing values you want to group by."
+          } else {
+            "Choose the continuous variable to categorize."
+          },
+          type = "warning")
         return()
       }
 
@@ -124,12 +139,12 @@ gs_server <- function(dataset, data_name = "mydata") {
     output$cuts_list <- shiny::renderUI({
       cs <- cuts_used()
       if (!length(cs)) {
-        return(shiny::helpText("No categorized variables yet."))
+        return(shiny::helpText("No derived variables yet."))
       }
       labels <- vapply(cs, gs_cut_describe, character(1L))
       shiny::div(
         class = "mt-3",
-        shiny::selectInput("cut_remove", "Categorized variables",
+        shiny::selectInput("cut_remove", "Derived variables",
                            choices = stats::setNames(seq_along(cs), labels)),
         shiny::actionButton("remove_cut", "Remove", class = "btn-outline-danger btn-sm",
                             icon = shiny::icon("trash"))
@@ -195,8 +210,11 @@ gs_server <- function(dataset, data_name = "mydata") {
                                           if (identical(spec$strat_mode, "crossed"))
                                             " x " else ", ")))
       }
-      shiny::div(class = "alert alert-light border py-2 px-3 small mt-2",
-                 paste(parts, collapse = ", "))
+      shiny::tagList(
+        shiny::div(class = "alert alert-light border py-2 px-3 small mt-2",
+                   paste(parts, collapse = ", ")),
+        gs_self_missing_alert(gs_self_missing_cuts(spec))
+      )
     })
 
     # --- strata -------------------------------------------------------------

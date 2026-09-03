@@ -72,15 +72,29 @@ gs_clean_names <- function(dt) {
 #' stratifying variable, and what decides whether a variable is a sensible
 #' thing to stratify on at all.
 #'
+#' `is_continuous` follows the column's own type: a numeric column is
+#' continuous. Counting its distinct values would be guessing at what the
+#' column means, and it guesses wrong on exactly the measurements that are
+#' recorded coarsely -- an age in whole years over a narrow age range, a
+#' visit number, a score out of five. The one reading the data does support
+#' is that a column holding at most two values cannot describe a spread, so
+#' an indicator coded 0/1 is not offered as a measurement.
+#'
+#' `is_categorical` is a separate question, not the negation of that one: it
+#' asks whether the column's distinct values are few enough to split figures
+#' by. A numeric column coded 1/2/3 answers yes to both, and should -- it is
+#' a sensible thing to stratify on and a sensible thing to plot on an axis.
+#'
 #' @param dt A `data.table`.
 #' @param max_levels Largest number of distinct values still treated as
 #'   categorical for stratification purposes.
-#' @param min_continuous Smallest number of distinct numeric values before a
-#'   numeric column counts as continuous rather than a coded category.
+#' @param max_coded_levels Largest number of distinct numeric values that
+#'   still reads as a coded category rather than a measurement. Only decides
+#'   what may be stratified by; a numeric column is continuous either way.
 #' @return A `data.table` with one row per column.
 #' @keywords internal
 #' @noRd
-gs_classify_vars <- function(dt, max_levels = 50L, min_continuous = 10L) {
+gs_classify_vars <- function(dt, max_levels = 50L, max_coded_levels = 9L) {
   nms <- names(dt)
   if (!length(nms)) {
     return(data.table::data.table(
@@ -101,8 +115,8 @@ gs_classify_vars <- function(dt, max_levels = 50L, min_continuous = 10L) {
       class = cls,
       n_levels = as.integer(nlev),
       n_missing = as.integer(sum(is.na(col))),
-      is_continuous = numericish && nlev >= min_continuous,
-      is_categorical = !numericish || nlev < min_continuous,
+      is_continuous = numericish && nlev > 2L,
+      is_categorical = !numericish || nlev <= max_coded_levels,
       # Both are for the Kaplan-Meier selectors: survival::Surv() needs a
       # numeric time and a two-valued event indicator.
       is_numeric = numericish,
@@ -163,10 +177,13 @@ gs_vars_of <- function(info, role = c("continuous", "categorical", "stratify",
 #' for, looks exactly like a figure that was asked for.
 #'
 #' @param info Output of `gs_classify_vars()`.
+#' @param cut_method The method currently chosen under **Derive a variable**,
+#'   which decides what its variable selector may be set to. Only `"missing"`
+#'   widens the pool; see the `cut_var` element below.
 #' @return A named list of character vectors, one per `selectInput` id.
 #' @keywords internal
 #' @noRd
-gs_selector_choices <- function(info) {
+gs_selector_choices <- function(info, cut_method = "quantile") {
   all_vars <- gs_vars_of(info, "all")
   continuous <- gs_vars_of(info, "continuous")
   # Fall back to every variable when nothing looks continuous, so the app is
@@ -186,8 +203,11 @@ gs_selector_choices <- function(info) {
     # survival::Surv() needs a numeric time and a two-valued event indicator.
     timevar = gs_vars_of(info, "numeric"),
     eventvar = gs_vars_of(info, "event"),
-    # Categorizing a variable that is already categorical would do nothing.
-    cut_var = continuous
+    # Categorizing a variable that is already categorical would do nothing --
+    # except when the question is whether it has a value at all, which is
+    # worth asking of a factor, a character column or a date just as much as
+    # of a number.
+    cut_var = if (identical(cut_method, "missing")) all_vars else continuous
   )
   lapply(out, function(x) c(GS_NONE, x))
 }

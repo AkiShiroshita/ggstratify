@@ -38,6 +38,18 @@ lp <- 0.9 * (as.numeric(severity) - 1) + 0.02 * (age - 62) +
 t_event <- rexp(n, rate = 0.0016 * exp(lp))
 t_cens <- pmin(rexp(n, rate = 0.0008), 365)
 
+# CRP is not measured on everyone, and who it is measured on is not random:
+# the milder the presentation, the more often it is left undone. That makes it
+# missing at random given severity -- the pattern the "missing vs observed"
+# layer exists to show, and one that a complete example data set cannot
+# demonstrate.
+#
+# Drawn here, after every other variable, so that adding it leaves the rest of
+# the data set exactly as it was: the draws above keep the stream positions
+# they had when they were first generated.
+p_unmeasured <- c(Mild = 0.28, Moderate = 0.10, Severe = 0.02)[severity]
+crp[runif(n) < p_unmeasured] <- NA_real_
+
 epi_cohort <- data.frame(
   id = sprintf("P%04d", seq_len(n)),
   age = age,

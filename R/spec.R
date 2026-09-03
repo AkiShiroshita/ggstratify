@@ -53,12 +53,35 @@ GS_XY_TYPES <- c("Line", "Scatter")
 # nothing summarised in between, which is what a smoother has to have.
 GS_SMOOTH_TYPES <- c("Line", "Scatter")
 
-# The ways a continuous variable can be turned into a categorical one.
+# The ways a column can be turned into a categorical one. The first three
+# read a continuous variable's values; the fourth reads only whether there is
+# a value at all, so it applies to a column of any type.
 GS_CUT_METHODS <- c(
   "Quantiles (equal-sized groups)" = "quantile",
   "Equal-width bins"               = "equal",
-  "Custom cut points"              = "breaks"
+  "Custom cut points"              = "breaks",
+  "Missing vs observed"            = "missing"
 )
+
+# The methods that read values rather than the absence of them, and so need a
+# numeric column. Named once here because the UI, the validator and the
+# selector list all have to agree on it.
+GS_VALUE_CUT_METHODS <- c("quantile", "equal", "breaks")
+
+# The methods that ask for a number of groups. "breaks" gets its groups from
+# the cut points, and "missing" always makes exactly two.
+GS_GROUP_COUNT_METHODS <- c("quantile", "equal")
+
+# The two levels of a missing-vs-observed variable, in that order: "Observed"
+# is FALSE and comes first, so it is the reference level and the left-hand
+# panel. They end up in strip text, axis text and file names, so they are
+# words rather than FALSE and TRUE.
+GS_OBSERVED_LABEL <- "Observed"
+GS_MISSING_LABEL <- "Missing"
+
+# The suffix each method gives a derived column when the user has not named it.
+GS_CUT_SUFFIX <- c(quantile = "_cat", equal = "_cat", breaks = "_cat",
+                   missing = "_missing")
 
 # The file formats a figure can be written in. PNG goes through ragg; SVG is a
 # vector format, so a figure stays sharp at any size and can still be edited in
@@ -154,6 +177,44 @@ GS_STRAT_MODES <- c(
 gs_layer_vars <- function(spec) {
   v <- c(spec$strat_vars, spec$facet)
   unique(v[nzchar(v)])
+}
+
+#' The variables the figure itself reads
+#'
+#' The layer variables are what a figure is split by; these are what is drawn
+#' inside it. Which of them are in use depends on the plot type, so the spec
+#' is expected to have been through `gs_normalize_spec()` first -- it is what
+#' clears the selections a plot type does not read.
+#' @keywords internal
+#' @noRd
+gs_plotted_vars <- function(spec) {
+  v <- c(spec$y, spec$x, spec$group, spec$time, spec$event, spec$id)
+  unique(v[nzchar(v)])
+}
+
+#' Cuts that split a variable by whether that same variable has a value
+#'
+#' Stratifying by the missingness of `bmi` puts every row with no `bmi` into
+#' one figure. That is the useful thing to do -- until `bmi` is also what the
+#' figure draws, and the Missing figure is drawn from rows that are, by
+#' construction, all `NA`. It is a real figure with a real N and nothing in
+#' it, which reads as a bug in the app rather than as the arrangement the user
+#' asked for, so the app says so instead.
+#'
+#' @return The offending cuts, as a list; empty when there are none.
+#' @keywords internal
+#' @noRd
+gs_self_missing_cuts <- function(spec) {
+  layers <- gs_layer_vars(spec)
+  plotted <- gs_plotted_vars(spec)
+  if (!length(layers) || !length(plotted)) return(list())
+  cuts <- gs_as_cuts(spec$cuts)
+  if (!length(cuts)) return(list())
+  keep <- vapply(cuts, function(cut) {
+    identical(cut$method, "missing") &&
+      cut$new %in% layers && cut$var %in% plotted
+  }, logical(1L))
+  cuts[keep]
 }
 
 #' How many layers a spec describes, the described variable included
@@ -344,8 +405,8 @@ gs_validate_spec <- function(spec, info = NULL) {
         needs_cont, type))
     }
     # Only Scatter is held to a continuous X. A line plot's X is time, which
-    # is as often a date or a visit number -- neither of which is classified
-    # as continuous -- as it is a measurement.
+    # is as often a date -- which is not classified as continuous -- as it is
+    # a measurement.
     if (type == "Scatter" && nzchar(spec$x) && !spec$x %in% continuous) {
       problems <- c(problems,
                     sprintf("Scatter expects a continuous X-variable; '%s' is not.", spec$x))

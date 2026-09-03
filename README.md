@@ -8,6 +8,13 @@
 </a>
 <br clear="right">
 
+<!-- badges: start -->
+[![R-CMD-check](https://github.com/AkiShiroshita/ggstratify/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/AkiShiroshita/ggstratify/actions/workflows/R-CMD-check.yaml)
+[![CRAN status](https://www.r-pkg.org/badges/version/ggstratify)](https://CRAN.R-project.org/package=ggstratify)
+[![ggstratify downloads](https://cranlogs.r-pkg.org/badges/ggstratify)](https://CRAN.R-project.org/package=ggstratify)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21961507.svg)](https://doi.org/10.5281/zenodo.21961507)
+<!-- badges: end -->
+
 **A one-function, point-and-click Shiny interface for the descriptive analysis.**
 
 ```r
@@ -52,6 +59,14 @@ the axis.
 
 ## Installation
 
+From CRAN:
+
+```r
+install.packages("ggstratify")
+```
+
+The development version from GitHub:
+
 ```r
 # install.packages("remotes")
 remotes::install_github("AkiShiroshita/ggstratify")
@@ -79,6 +94,17 @@ ggstratify(iris)                 # data.frame / tibble / data.table / matrix
 
 `Boxplot` / `Density` / `Dot + Error` / `Dotplot` / `Histogram` /
 `Kaplan-Meier curve` / `Line` / `Scatter` / `Violin`
+
+## Derived variables
+
+**Derive a variable** makes a new categorical variable out of one you already
+have, which can then be used as a layer like any other. A continuous variable
+becomes quantile groups, equal-width bins or your own cut points. A variable
+of any type becomes **missing vs observed**: the rows where it has a value
+and the rows where it does not.
+
+`crp` in the bundled `epi_cohort` is incomplete on purpose, so
+`ggstratify(epi_cohort)` is enough to try it.
 
 ## Acknowledgements
 
