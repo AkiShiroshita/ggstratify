@@ -20,7 +20,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">ggstratify</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.1</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -110,7 +110,7 @@ package.</p>
 <span><span class="co">#&gt;  $ treatment: Factor w/ 3 levels "Control","Low dose",..: 1 3 3 2 1 2 2 1 3 1 ...</span></span>
 <span><span class="co">#&gt;  $ severity : Factor w/ 3 levels "Mild","Moderate",..: 1 2 1 2 2 1 1 1 1 1 ...</span></span>
 <span><span class="co">#&gt;  $ bmi      : num  23.6 23.1 24.9 20.1 25.3 21.2 23 25.6 27.6 26 ...</span></span>
-<span><span class="co">#&gt;  $ crp      : num  4.4 4.6 8.8 21.8 18.1 17.6 4.4 6.3 1.7 3.4 ...</span></span>
+<span><span class="co">#&gt;  $ crp      : num  4.4 4.6 NA 21.8 18.1 17.6 4.4 NA NA NA ...</span></span>
 <span><span class="co">#&gt;  $ los_days : num  14 10 5 15 16 12 9 10 8 10 ...</span></span>
 <span><span class="co">#&gt;  $ fu_days  : num  229 65 258 289 141 4 235 365 40 365 ...</span></span>
 <span><span class="co">#&gt;  $ death    : int  1 1 0 0 1 0 0 0 0 0 ...</span></span></code></pre></div>
@@ -159,20 +159,48 @@ per figure</strong> are listed but not plotted. Set the minimum to
 are never plotted.</p>
 </div>
 <div class="section level2">
-<h2 id="categorizing-a-continuous-variable">Categorizing a continuous variable<a class="anchor" aria-label="anchor" href="#categorizing-a-continuous-variable"></a>
+<h2 id="deriving-a-variable">Deriving a variable<a class="anchor" aria-label="anchor" href="#deriving-a-variable"></a>
 </h2>
-<p>The <strong>Categorize</strong> panel lets you turn a continuous
-variable into groups using:</p>
+<p>The <strong>Derive a variable</strong> panel makes a new categorical
+variable out of one you already have, using:</p>
 <ul>
 <li><strong>Quantiles</strong></li>
 <li><strong>Equal-width bins</strong></li>
 <li><strong>Custom cut points</strong></li>
+<li><strong>Missing vs observed</strong></li>
 </ul>
 <p>For example, you can create an age group at 65 years:</p>
 <div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">dt</span><span class="op">[</span>, <span class="va">age_cat</span> <span class="op">:=</span> <span class="fu"><a href="https://rdrr.io/r/base/cut.html" class="external-link">cut</a></span><span class="op">(</span><span class="va">age</span>, breaks <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="op">-</span><span class="cn">Inf</span>, <span class="fl">65</span>, <span class="cn">Inf</span><span class="op">)</span><span class="op">)</span><span class="op">]</span></span></code></pre></div>
 <p>The new variable can then be used like any other categorical
 variable.</p>
+<div class="section level3">
+<h3 id="missing-vs-observed">Missing vs observed<a class="anchor" aria-label="anchor" href="#missing-vs-observed"></a>
+</h3>
+<p>The first three methods read a continuous variable’s values. The
+fourth reads only whether there is a value, so it applies to a variable
+of any type – a factor, a character column or a date as much as a
+number:</p>
+<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">dt</span><span class="op">[</span>, <span class="va">crp_missing</span> <span class="op">:=</span> <span class="fu"><a href="https://rdrr.io/r/base/factor.html" class="external-link">factor</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/NA.html" class="external-link">is.na</a></span><span class="op">(</span><span class="va">crp</span><span class="op">)</span>, levels <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="cn">FALSE</span>, <span class="cn">TRUE</span><span class="op">)</span>,</span>
+<span>                           labels <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"Observed"</span>, <span class="st">"Missing"</span><span class="op">)</span><span class="op">)</span><span class="op">]</span></span></code></pre></div>
+<p>Stratify by it to describe another variable within each group: how
+the people whose CRP was never measured differ from the people whose CRP
+was. Every row lands in one of the two groups, so none is excluded – the
+rows that a layer variable’s own missingness would have dropped are the
+ones this puts on the screen.</p>
+<p>Describing the variable itself within its own missingness is the one
+arrangement to avoid: the Missing figure would be drawn from rows that
+have no value for it. The app says so under <strong>Layers</strong> when
+you ask for that.</p>
+<p>A variable with no missing values, or with nothing but missing
+values, gives one group rather than two and is refused with a note
+saying which.</p>
+<p><code>crp</code> in the bundled <code>epi_cohort</code> is left
+incomplete on purpose so that this can be tried straight away: 122 of
+the 600 patients were never tested, and the milder the presentation the
+more often the test was skipped.</p>
+</div>
 </div>
 <div class="section level2">
 <h2 id="figure-types">Figure types<a class="anchor" aria-label="anchor" href="#figure-types"></a>
@@ -213,7 +241,7 @@ figure currently shown.</p>
 <code>ggplot2</code> commands, so you can copy it into your own
 analysis.</p>
 <p>For example:</p>
-<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://r-datatable.com" class="external-link">data.table</a></span><span class="op">)</span></span>
 <span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://ggplot2.tidyverse.org" class="external-link">ggplot2</a></span><span class="op">)</span></span>
 <span></span>

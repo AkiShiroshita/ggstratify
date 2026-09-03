@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">ggstratify</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.1</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -33,13 +33,23 @@
     </div>
 
     <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.1.0" id="ggstratify-010">ggstratify 0.1.0<a class="anchor" aria-label="anchor" href="#ggstratify-010"></a></h2>
+<ul><li><p>A numeric variable is now treated as continuous because of its type, not because it has enough distinct values. Counting distinct values guessed wrong on measurements that are recorded coarsely – an age in whole years over a narrow range, a visit number, a score out of five – and refused to plot them on an axis. A column holding at most two values is still not offered as a measurement: an indicator coded 0/1 cannot describe a spread. A few-levelled numeric column can now be both, plotted on an axis and stratified by.</p></li>
+<li><p>A line plot’s <strong>Mark the observations</strong> option has moved from <strong>Plot options</strong> to <strong>Describe</strong>, beside the rest of the line settings, and draws its points at <code>size = 1</code> so that a dense set of them does not cover the line it belongs to.</p></li>
+<li><p><strong>Derive a variable</strong> (the panel formerly called Categorize) gains a fourth method: <em>missing vs observed</em>. It reads no values, only whether there is a value, so it applies to a variable of any type – a factor, a character column or a date as much as a number – and turns it into two groups that can be used as a layer like any other categorical variable.</p></li>
+<li><p>Rows with a missing value in a layer variable are excluded, as before. A missing-vs-observed variable is the one layer that never has one: <code><a href="https://rdrr.io/r/base/NA.html" class="external-link">is.na()</a></code> answers for every row. The rows another layer would have dropped are therefore exactly the ones this puts in front of you, which is what makes it a way to look at who is not in the data rather than only to count them.</p></li>
+<li><p>Describing a variable within its own missingness leaves the Missing figure with nothing to draw. The app reports that arrangement under <strong>Layers</strong> instead of drawing an empty figure without comment, and still draws it.</p></li>
+<li><p>A variable with no missing values, or with nothing but missing values, gives one group rather than two and is refused with a note saying which.</p></li>
+</ul></div>
+    <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.0.1" id="ggstratify-001">ggstratify 0.0.1<a class="anchor" aria-label="anchor" href="#ggstratify-001"></a></h2>
 <ul><li><p>Initial release.</p></li>
 <li><p><code><a href="../reference/ggstratify.html">ggstratify()</a></code> takes a data frame or a matrix that is already in your session, and nothing else. There is no file-upload control in the application and a file path is no longer accepted as <code>dataset</code>. Data read from disk is typed by whatever the reader guessed, and would then be described on those guesses; read the file yourself, look at the result, and pass the object.</p></li>
 <li><p>The name the data was passed under is what the generated code refers to it by, so <code>ggstratify(cohort)</code> prints code that starts <code>d &lt;- cohort</code>.</p></li>
 <li><p>Previews are subsampled only above one million rows for scatter and line plots and ten million for the plot types that summarise their rows first, and never for Kaplan-Meier curves.</p></li>
 </ul></div>
-  </main></div>
+  </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
+    </nav></aside></div>
 
 
     <footer><div class="pkgdown-footer-left">

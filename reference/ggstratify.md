@@ -86,9 +86,23 @@ on the Strata tab and by the generated code.
 
 ## Three things descriptive work keeps needing
 
-Under **Categorize**, a continuous variable becomes a categorical one –
-quantile groups, equal-width bins or your own cut points – and can then
-be used as a layer like any other categorical variable.
+Under **Derive a variable**, a new categorical variable is made from one
+you already have, and can then be used as a layer like any other
+categorical variable. A continuous variable becomes quantile groups,
+equal-width bins or your own cut points. Any variable, of any type,
+becomes *missing vs observed*: the rows where it has a value and the
+rows where it does not.
+
+That last one is the layer for the question of who is not in the data.
+Rows with a missing value in a layer variable are excluded, but a
+missing-vs-observed variable never has one –
+[`is.na()`](https://rdrr.io/r/base/NA.html) answers for every row – so
+the rows that some other layer would have dropped are exactly the ones
+it puts in front of you. Describe another variable within it to see how
+the people whose CRP was never measured differ from the people whose CRP
+was. Describing the variable itself within its own missingness leaves
+the Missing figure with nothing to draw, and the app says so under
+**Layers** rather than drawing an empty figure without comment.
 
 Under **Type of graph**, *Kaplan-Meier curve* draws survival curves from
 a time variable and an event indicator, fitted with

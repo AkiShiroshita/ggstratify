@@ -64,7 +64,7 @@ str(epi_cohort)
 #>  $ treatment: Factor w/ 3 levels "Control","Low dose",..: 1 3 3 2 1 2 2 1 3 1 ...
 #>  $ severity : Factor w/ 3 levels "Mild","Moderate",..: 1 2 1 2 2 1 1 1 1 1 ...
 #>  $ bmi      : num  23.6 23.1 24.9 20.1 25.3 21.2 23 25.6 27.6 26 ...
-#>  $ crp      : num  4.4 4.6 8.8 21.8 18.1 17.6 4.4 6.3 1.7 3.4 ...
+#>  $ crp      : num  4.4 4.6 NA 21.8 18.1 17.6 4.4 NA NA NA ...
 #>  $ los_days : num  14 10 5 15 16 12 9 10 8 10 ...
 #>  $ fu_days  : num  229 65 258 289 141 4 235 365 40 365 ...
 #>  $ death    : int  1 1 0 0 1 0 0 0 0 0 ...
@@ -102,14 +102,15 @@ Strata with fewer observations than the selected **Minimum N per
 figure** are listed but not plotted. Set the minimum to `0` if you want
 to include small strata. Empty factor levels are never plotted.
 
-## Categorizing a continuous variable
+## Deriving a variable
 
-The **Categorize** panel lets you turn a continuous variable into groups
-using:
+The **Derive a variable** panel makes a new categorical variable out of
+one you already have, using:
 
 - **Quantiles**
 - **Equal-width bins**
 - **Custom cut points**
+- **Missing vs observed**
 
 For example, you can create an age group at 65 years:
 
@@ -119,6 +120,37 @@ dt[, age_cat := cut(age, breaks = c(-Inf, 65, Inf))]
 ```
 
 The new variable can then be used like any other categorical variable.
+
+### Missing vs observed
+
+The first three methods read a continuous variable’s values. The fourth
+reads only whether there is a value, so it applies to a variable of any
+type – a factor, a character column or a date as much as a number:
+
+``` r
+
+dt[, crp_missing := factor(is.na(crp), levels = c(FALSE, TRUE),
+                           labels = c("Observed", "Missing"))]
+```
+
+Stratify by it to describe another variable within each group: how the
+people whose CRP was never measured differ from the people whose CRP
+was. Every row lands in one of the two groups, so none is excluded – the
+rows that a layer variable’s own missingness would have dropped are the
+ones this puts on the screen.
+
+Describing the variable itself within its own missingness is the one
+arrangement to avoid: the Missing figure would be drawn from rows that
+have no value for it. The app says so under **Layers** when you ask for
+that.
+
+A variable with no missing values, or with nothing but missing values,
+gives one group rather than two and is refused with a note saying which.
+
+`crp` in the bundled `epi_cohort` is left incomplete on purpose so that
+this can be tried straight away: 122 of the 600 patients were never
+tested, and the milder the presentation the more often the test was
+skipped.
 
 ## Figure types
 
