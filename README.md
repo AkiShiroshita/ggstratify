@@ -8,6 +8,13 @@
 </a>
 <br clear="right">
 
+<!-- badges: start -->
+[![R-CMD-check](https://github.com/AkiShiroshita/ggstratify/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/AkiShiroshita/ggstratify/actions/workflows/R-CMD-check.yaml)
+[![CRAN status](https://www.r-pkg.org/badges/version/ggstratify)](https://CRAN.R-project.org/package=ggstratify)
+[![ggstratify downloads](https://cranlogs.r-pkg.org/badges/ggstratify)](https://CRAN.R-project.org/package=ggstratify)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21961507.svg)](https://doi.org/10.5281/zenodo.21961507)
+<!-- badges: end -->
+
 **A one-function, point-and-click Shiny interface for the descriptive analysis.**
 
 ```r
@@ -51,6 +58,14 @@ A grouping variable left as `1, 2, 3` will be described as a number. The
 the axis.
 
 ## Installation
+
+From CRAN:
+
+```r
+install.packages("ggstratify")
+```
+
+The development version from GitHub:
 
 ```r
 # install.packages("remotes")

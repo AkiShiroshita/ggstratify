@@ -1,0 +1,21 @@
+year <- if (!is.null(meta$Date)) {
+  sub("-.*", "", meta$Date)
+} else {
+  format(Sys.Date(), "%Y")
+}
+note <- sprintf("R package version %s", meta$Version)
+
+citHeader("To cite ggstratify in publications, please use:")
+
+bibentry(
+  bibtype  = "Manual",
+  title    = "{ggstratify}: Fast Stratified Descriptive Figures with a Point-and-Click GUI",
+  author   = c(
+    person("Akihiro", "Shiroshita"),
+    person("Yuki", "Kataoka")
+  ),
+  year     = year,
+  note     = note,
+  url      = "https://CRAN.R-project.org/package=ggstratify",
+  doi      = "10.5281/zenodo.21961507"
+)
