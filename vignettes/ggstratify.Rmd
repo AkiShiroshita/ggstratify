@@ -92,6 +92,110 @@ Strata with fewer observations than the selected **Minimum N per figure** are
 listed but not plotted. Set the minimum to `0` if you want to include small
 strata. Empty factor levels are never plotted.
 
+## What the error bar stands for
+
+A **Dot + Error** figure draws one standard error either side of the mean
+unless told otherwise:
+
+```{r, eval = FALSE}
+stat_summary(fun.data = mean_se, geom = "pointrange")
+```
+
+That is a statement about how precisely the mean is known, and it is about half
+as wide as the confidence interval most readers take an error bar to be. Under
+**Plot options** you can ask for the interval instead, at 90, 95 or 99 percent.
+For a measurement it is the t interval -- the one `t.test()` reports:
+
+```{r, eval = FALSE}
+mean_ci <- function(x, conf = 0.95) {
+  x <- x[!is.na(x)]
+  n <- length(x)
+  m <- if (n) mean(x) else NA_real_
+  if (n < 2L) return(data.frame(y = m, ymin = NA_real_, ymax = NA_real_))
+  half <- qt(1 - (1 - conf) / 2, n - 1L) * sd(x) / sqrt(n)
+  data.frame(y = m, ymin = m - half, ymax = m + half)
+}
+```
+
+### A proportion is not a measurement
+
+A Y variable coded 0 and 1 -- died or did not, readmitted or not -- is a
+proportion, and a mean plus or minus a standard error describes it badly. Near
+0 or 1 the bar runs outside the range a proportion can take, and in a stratum
+where nobody had the outcome it has no width at all and claims certainty.
+
+Such a column is not continuous, so it appears in the Y list only for this
+figure, and the bars offered narrow to the two that apply to it.
+
+It can be written any of the ways R keeps an outcome -- `0`/`1`,
+`TRUE`/`FALSE`, a two-level factor, two character values -- and **Count as the
+outcome** says which of the two values is being counted. It defaults to the
+second, which is R's own convention, and you will want to change it for a
+factor declared `c("Yes", "No")`.
+
+The counting happens in the figure rather than to the data:
+
+```{r, eval = FALSE}
+ggplot(d, aes(x = severity, y = as.integer(outcome == "Died"))) +
+  stat_summary(fun.data = prop_ci_wilson, fun.args = list(conf = 0.95),
+               geom = "pointrange") +
+  labs(y = "Proportion outcome = Died")
+```
+
+That is not a stylistic choice. `ggplot2` puts a non-numeric Y on a discrete
+scale, so an outcome left as a factor would reach the interval as the level
+number -- 1 and 2 -- and come back as a proportion above one, with a `NaN` from
+the square root of a negative variance as the only sign that anything went
+wrong. Comparing inside the `aes()` avoids that, keeps the column as you typed
+it, and puts what was counted on the screen.
+
+Two intervals are offered for that case. **Exact (Clopper-Pearson)** inverts
+the binomial test, so it never covers less often than it claims:
+
+```{r, eval = FALSE}
+prop_ci_exact <- function(x, conf = 0.95) {
+  x <- as.numeric(x); x <- x[!is.na(x)]
+  ci <- binom.test(sum(x), length(x), conf.level = conf)$conf.int
+  data.frame(y = mean(x), ymin = ci[1], ymax = ci[2])
+}
+```
+
+**Wilson** inverts the score test, and is the better-centred of the two at
+small n. It is the interval `prop.test(correct = FALSE)` gives:
+
+```{r, eval = FALSE}
+prop_ci_wilson <- function(x, conf = 0.95) {
+  x <- as.numeric(x); x <- x[!is.na(x)]
+  n <- length(x); p <- mean(x)
+  z <- qnorm(1 - (1 - conf) / 2)
+  denom <- 1 + z^2 / n
+  centre <- (p + z^2 / (2 * n)) / denom
+  half <- z * sqrt(p * (1 - p) / n + z^2 / (4 * n^2)) / denom
+  data.frame(y = p, ymin = max(0, centre - half), ymax = min(1, centre + half))
+}
+```
+
+Which to prefer is a judgement -- exact is conservative, Wilson is better
+centred -- so both are offered and neither is chosen for you. Whichever you
+pick, the function that computes it is printed above the figure in the
+**R-code** tab, so the interval in the figure is one a reader can check.
+
+`death` in the bundled `epi_cohort` is coded 0 and 1, so
+`ggstratify(epi_cohort)` is enough to try this.
+
+## Turning the tick labels
+
+Twelve month names along one axis do not fit side by side, and `ggplot2` draws
+them overlapping rather than dropping any. **Appearance** turns the labels on
+either axis by 30, 45, 60 or 90 degrees:
+
+```{r, eval = FALSE}
+theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1))
+```
+
+It is emitted after the theme, because a theme replaces the element rather than
+merging into it -- `theme_bw()` afterwards would put the labels back flat.
+
 ## Deriving a variable
 
 The **Derive a variable** panel makes a new categorical variable out of one
@@ -101,6 +205,7 @@ you already have, using:
 * **Equal-width bins**
 * **Custom cut points**
 * **Missing vs observed**
+* **Time resolution**
 
 For example, you can create an age group at 65 years:
 
@@ -137,6 +242,84 @@ one group rather than two and is refused with a note saying which.
 `crp` in the bundled `epi_cohort` is left incomplete on purpose so that this
 can be tried straight away: 122 of the 600 patients were never tested, and the
 milder the presentation the more often the test was skipped.
+
+### Time resolution
+
+A date is rarely a layer as it stands. `admit_date` in `epi_cohort` runs over
+three calendar years and has several hundred distinct values, so stratifying by
+it would ask for several hundred figures. The fifth method reads it at whatever
+resolution the question is being asked at.
+
+Two families, answering different questions. A **calendar period** keeps the
+year, so every row in March 2021 lands together:
+
+```{r, eval = FALSE}
+dt[, admit_month := as.IDate(cut(as.IDate(admit_date), breaks = "month"))]
+```
+
+The result is still a date. That is the point of it: a trend drawn against this
+column is spaced by elapsed time rather than by level number, and its axis can
+still be given date ticks.
+
+A **position in the cycle** drops the year and pools every March since the data
+began, which is what a seasonal pattern is:
+
+```{r, eval = FALSE}
+dt[, admit_month := factor(month.abb[month(admit_date)], levels = month.abb)]
+```
+
+The levels are written out rather than sorted, because sorting the months of
+the year puts April first. Days of the week run Monday to Sunday for the same
+reason.
+
+A season is the same idea over three months at a time, and you choose the month
+it starts in:
+
+```{r, eval = FALSE}
+dt[, admit_season := factor(
+  c("Spring", "Summer", "Fall", "Winter")[
+    ((month(admit_date) - 3L) %% 12L) %/% 3L + 1L],
+  levels = c("Spring", "Summer", "Fall", "Winter"))]
+```
+
+March gives the northern hemisphere and September the southern. The order
+spring, summer, fall, winter does not change with it.
+
+Describe a measurement within the result and the seasonal pattern is a figure:
+`admit_date` read by season, `los_days` as a boxplot, and the four panels come
+out in season order. In `epi_cohort` the winter cases are the more severe ones,
+so the difference is a real one rather than noise.
+
+Two things this method will not do. A resolution the column cannot answer is
+refused with the reason rather than silently producing one group: an hour of
+the day taken from a plain date would be midnight for every row, and a month
+taken from a time of day has no calendar to fall in. And the application does
+not aggregate before it plots -- a boxplot by month shows the distribution of
+the observations in each month, not the distribution of monthly means. If you
+want the latter, summarise the data yourself first and pass the result to
+`ggstratify()`.
+
+## A date on the X axis
+
+A `Line` plot drawn against a date has its own controls under **Appearance**:
+how far apart the ticks are, and what each one reads.
+
+```{r, eval = FALSE}
+ggplot(d, aes(x = admit_date, y = los_days)) +
+  geom_line(alpha = 0.6) +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
+  labs(x = "Year") +
+  theme_bw()
+```
+
+The values plotted do not change; only the ticks over them. A column that
+really holds dates is therefore drawn day by day and read year by year, and
+with no axis label typed the axis is titled by the unit rather than by the
+column's name. The tick text follows your R session's language, so `%b` reads
+`Mar` under an English locale and differently under another.
+
+The numeric **X axis from** and **X axis to** boxes cannot hold a date, so they
+are ignored while the X variable is one.
 
 ## Figure types
 

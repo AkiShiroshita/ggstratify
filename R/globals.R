@@ -16,7 +16,7 @@
 # Columns referenced by data.table's non-standard evaluation.
 utils::globalVariables(c(
   ".", ".N", ".SD", ".facet_label", ".gs_stratum", ".strat_label",
-  "can_stratify", "file", "is_categorical",
-  "is_continuous", "is_event", "is_numeric", "keep", "label", "level", "n",
+  "can_stratify", "file", "is_binary", "is_categorical", "is_continuous",
+  "is_event", "is_numeric", "is_temporal", "keep", "label", "level", "n",
   "n_levels", "n_missing", "status", "var"
 ))

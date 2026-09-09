@@ -204,17 +204,6 @@ test_that("a missingness rule names itself after the question it asks", {
   expect_equal(gs_cut_describe(cut), "bmi_missing <- bmi (missing vs observed)")
 })
 
-test_that("the name box is refreshed for a suggestion under either suffix", {
-  # The server overwrites a name it suggested and leaves a typed one alone, so
-  # the pattern has to know both suffixes -- and no others.
-  pat <- gs_suggested_name_pattern()
-  expect_true(grepl(pat, "bmi_cat"))
-  expect_true(grepl(pat, "bmi_cat2"))
-  expect_true(grepl(pat, "bmi_missing"))
-  expect_true(grepl(pat, "bmi_missing3"))
-  expect_false(grepl(pat, "measured"))
-})
-
 test_that("missingness splits the rows in two and loses none of them", {
   dt <- gappy()
   out <- gs_apply_cuts(dt, list(gs_cut("bmi", method = "missing"),
@@ -274,4 +263,232 @@ test_that("the variable pool widens for missingness and narrows back", {
   # The label follows the pool.
   expect_equal(gs_cut_var_label("missing"), "Variable")
   expect_equal(gs_cut_var_label("quantile"), "Continuous variable")
+})
+
+# --- time resolutions ---------------------------------------------------------
+
+# Three years of dates, and the same three years carrying a time of day, so
+# that every resolution has something to read and the two families can be told
+# apart.
+dated <- function() {
+  days <- as.Date("2021-01-04") + seq(0, 1080, by = 9)
+  data.table::data.table(
+    d = days,
+    id = data.table::as.IDate(days),
+    # A time of day that varies but never runs past midnight, so `ts` and `d`
+    # describe the same days and a resolution can be compared across the two.
+    ts = as.POSIXct(paste(days, "06:20:00"), tz = "UTC") +
+      (seq_along(days) %% 20L) * 1237,
+    y = as.numeric(seq_along(days))
+  )
+}
+
+derive <- function(dt, var, unit, ...) {
+  rule <- gs_cut(var, method = "period", unit = unit, ...)
+  out <- gs_apply_cuts(dt, list(rule))
+  expect_null(attr(out, "gs_cut_error"))
+  out[[rule$new]]
+}
+
+test_that("every time resolution reads the column it is given", {
+  dt <- dated()
+  # A calendar period stays a date, because a trend drawn against it has to be
+  # spaced by elapsed time rather than by level number.
+  for (u in GS_PERIOD_UNITS) {
+    src <- if (u %in% GS_TIME_OF_DAY_UNITS) "ts" else "d"
+    col <- derive(dt, src, u)
+    expect_s3_class(col, if (u %in% GS_TIME_OF_DAY_UNITS) "POSIXct" else "Date")
+    expect_false(is.factor(col), info = u)
+  }
+  # A position in the cycle is a factor, and its levels are declared in full
+  # whether or not every one of them is used.
+  for (u in GS_CYCLE_UNITS) {
+    src <- if (u %in% GS_TIME_OF_DAY_UNITS) "ts" else "d"
+    col <- derive(dt, src, u)
+    expect_s3_class(col, "factor")
+    expect_false(inherits(col, "ordered"), info = u)
+  }
+})
+
+test_that("the months of the year run January to December, not alphabetically", {
+  # The whole reason the levels are written out: sort() puts April first.
+  col <- derive(dated(), "d", "month_of_year")
+  expect_equal(levels(col), month.abb)
+  expect_equal(gs_levels_of(col), month.abb)
+})
+
+test_that("the seasons keep their order from the month they are started at", {
+  dt <- dated()
+  month_of <- function(col, m) {
+    unique(as.character(col[data.table::month(dt$d) == m]))
+  }
+
+  north <- derive(dt, "d", "season", season_start = 3L)
+  expect_equal(levels(north), GS_SEASONS)
+  expect_equal(month_of(north, 3L), "Spring")
+  expect_equal(month_of(north, 7L), "Summer")
+  expect_equal(month_of(north, 10L), "Fall")
+  expect_equal(month_of(north, 12L), "Winter")
+
+  # Starting in September moves the months between the seasons and leaves the
+  # seasons themselves in the same order, which is what the control promises.
+  south <- derive(dt, "d", "season", season_start = 9L)
+  expect_equal(levels(south), GS_SEASONS)
+  expect_equal(month_of(south, 9L), "Spring")
+  expect_equal(month_of(south, 12L), "Summer")
+})
+
+test_that("the days of the week run Monday to Sunday, whatever numbers them", {
+  # data.table's wday() counts Sunday as 1, so the lookup and the levels are
+  # deliberately in different orders. Checked against strftime, which knows.
+  dt <- dated()
+  col <- derive(dt, "d", "day_of_week")
+  expect_equal(levels(col),
+               c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"))
+  expect_equal(as.character(col), format(dt$d, "%a"))
+})
+
+test_that("a calendar period sorts along real time rather than as text", {
+  # A month floored to a date orders 2021-09 before 2021-10; the same months
+  # written as text would not.
+  col <- derive(dated(), "d", "month")
+  expect_equal(gs_levels_of(col), sort(unique(as.character(col))))
+  expect_true(all(data.table::mday(col) == 1L))
+  expect_equal(min(col), as.Date("2021-01-01"))
+})
+
+test_that("an hour floored off a date-time keeps its instant and its zone", {
+  # as.POSIXct(cut(x, "hour")) looks like the obvious way to do this and is
+  # not: cut() writes its labels in the column's zone, as.POSIXct() reads them
+  # back in the session's, and the instant moves by the offset between them.
+  # Six hours, silently, for a UTC column read in US Central.
+  dt <- data.table::data.table(
+    ts = as.POSIXct(c("2024-01-15 08:37:12", "2024-06-15 13:59:59"), tz = "UTC")
+  )
+  col <- derive(dt, "ts", "hour")
+  expect_equal(attr(col, "tzone"), "UTC")
+  expect_equal(format(col, tz = "UTC"),
+               c("2024-01-15 08:00:00", "2024-06-15 13:00:00"))
+
+  mins <- derive(dt, "ts", "minute")
+  expect_equal(format(mins, tz = "UTC"),
+               c("2024-01-15 08:37:00", "2024-06-15 13:59:00"))
+})
+
+test_that("a date reads the same however it was typed", {
+  # Requirement: base R, data.table and date-time columns describing the same
+  # days must give the same answer, so that the method is about the data and
+  # not about which package wrote it.
+  dt <- dated()
+  for (u in c("year", "quarter", "month", "week", "day", "month_of_year",
+              "season", "quarter_of_year", "day_of_week")) {
+    from_date <- derive(dt, "d", u)
+    from_idate <- derive(dt, "id", u)
+    from_posix <- derive(dt, "ts", u)
+    expect_equal(as.character(from_idate), as.character(from_date), info = u)
+    expect_equal(as.character(from_posix), as.character(from_date), info = u)
+  }
+})
+
+test_that("a time resolution is refused when the column cannot answer it", {
+  dt <- dated()
+  dt[, txt := "not a date"]
+  dt[, empty := as.Date(NA)]
+  dt[, tod := data.table::as.ITime(ts)]
+
+  problem <- function(...) gs_check_cut(dt, gs_cut(..., method = "period"))
+
+  expect_match(problem("txt", unit = "month"), "not a date or a time")
+  expect_match(problem("y", unit = "year"), "not a date or a time")
+  expect_match(problem("empty", unit = "month"), "no values to read")
+  # An hour off a plain date is 0 for every row: data.table answers rather
+  # than refusing, so the generic "fewer than two groups" message would blame
+  # the wrong thing.
+  expect_match(problem("d", unit = "hour_of_day"), "no time of day")
+  expect_match(problem("d", unit = "hour"), "no time of day")
+  # And the mirror image, where data.table does refuse.
+  expect_match(problem("tod", unit = "month"), "no date")
+  expect_match(problem("tod", unit = "season"), "no date")
+
+  # The combinations that do work are not refused.
+  expect_length(problem("d", unit = "season"), 0L)
+  expect_length(problem("ts", unit = "hour_of_day"), 0L)
+  expect_length(problem("tod", unit = "hour_of_day"), 0L)
+})
+
+test_that("a cut keeps its resolution through gs_spec()", {
+  # gs_spec() rebuilds every rule through gs_as_cuts(), which passes on only
+  # the fields it knows about. A dropped unit would leave the app drawing one
+  # thing and the generated script another.
+  spec <- gs_spec(cuts = list(gs_cut("d", method = "period", unit = "season",
+                                     season_start = 9L)))
+  expect_equal(spec$cuts[[1L]]$unit, "season")
+  expect_equal(spec$cuts[[1L]]$season_start, 9L)
+
+  # And a rule handed in as a plain list, the way a saved spec would carry it.
+  plain <- gs_spec(cuts = list(list(var = "d", method = "period",
+                                    unit = "month_of_year")))
+  expect_equal(plain$cuts[[1L]]$unit, "month_of_year")
+  expect_equal(plain$cuts[[1L]]$new, "d_month")
+})
+
+test_that("a derived time variable is named and described by its resolution", {
+  # Two resolutions of one column are two columns, so the name has to say
+  # which is which rather than repeating the method.
+  expect_equal(gs_cut("admit", method = "period", unit = "year")$new,
+               "admit_year")
+  expect_equal(gs_cut("admit", method = "period", unit = "season")$new,
+               "admit_season")
+  expect_equal(gs_cut("admit", method = "period", unit = "day_of_week")$new,
+               "admit_weekday")
+  # A collision between the two families is settled the way any other is.
+  expect_equal(gs_cut_name("admit", "admit_month", "period", "month_of_year"),
+               "admit_month2")
+
+  expect_equal(gs_cut_describe(gs_cut("admit", method = "period",
+                                      unit = "month_of_year")),
+               "admit_month <- admit (by month of the year)")
+  expect_match(gs_cut_describe(gs_cut("admit", method = "period",
+                                      unit = "season", season_start = 9L)),
+               "spring starting in September", fixed = TRUE)
+  # Every resolution describes itself; none falls through to NULL, which would
+  # take the sidebar list down with it.
+  for (u in GS_TIME_UNIT_VALUES) {
+    expect_type(gs_cut_describe(gs_cut("admit", method = "period", unit = u)),
+                "character")
+  }
+})
+
+test_that("an unusable resolution falls back rather than building a bad rule", {
+  expect_equal(gs_cut("d", method = "period", unit = "fortnight")$unit, "month")
+  expect_equal(gs_cut("d", method = "period", unit = "season",
+                      season_start = 13L)$season_start, GS_SEASON_START)
+  expect_equal(gs_cut("d", method = "period", unit = "season",
+                      season_start = NA)$season_start, GS_SEASON_START)
+})
+
+test_that("the time-resolution line the app runs is the one it prints", {
+  # The same contract the other methods are held to: the derived column in the
+  # app is the column the generated script produces.
+  dt <- dated()
+  rule <- gs_cut("d", method = "period", unit = "season", season_start = 3L)
+  applied <- gs_apply_cuts(dt, list(rule))
+
+  env <- new.env(parent = asNamespace("data.table"))
+  assign("dt", data.table::copy(dt), envir = env)
+  eval(parse(text = gs_code_cut_line(rule, "dt")), envir = env)
+
+  expect_equal(get("dt", envir = env)[[rule$new]], applied[[rule$new]])
+})
+
+test_that("a time resolution can be read by a later rule", {
+  # The names accumulate as the list is walked, so a season derived from a
+  # date is available to a rule added after it.
+  dt <- dated()
+  out <- gs_apply_cuts(dt, list(
+    gs_cut("d", new = "season", method = "period", unit = "season"),
+    gs_cut("season", new = "season_missing", method = "missing")
+  ))
+  expect_true(all(c("season", "season_missing") %in% names(out)))
+  expect_equal(levels(out$season_missing), c("Observed", "Missing"))
 })

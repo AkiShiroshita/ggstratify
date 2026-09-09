@@ -510,3 +510,501 @@ test_that("a missingness variable keeps every row through the layer stage", {
   expect_equal(nrow(p$data), nrow(dt))
   expect_equal(nlevels(droplevels(p$data$.facet_label)), 2L)
 })
+
+# --- the date axis ------------------------------------------------------------
+
+line_spec <- function(...) {
+  gs_spec(plot_type = GS_LINE, x = "admit", y = "crp", ...)
+}
+
+dated_line <- function() {
+  days <- as.Date("2021-01-15") + seq(0, 1080, by = 15)
+  data.table::data.table(admit = days, crp = as.numeric(seq_along(days)))
+}
+
+test_that("a month of the year is written the way it would be written by hand", {
+  # The generated line is the idiom an analyst would type, not a paraphrase of
+  # it: month.abb is base R and month() is data.table's, both already attached
+  # by the script that runs this.
+  rule <- gs_cut("date", new = "month", method = "period",
+                 unit = "month_of_year")
+  expect_equal(
+    gs_code_cut_line(rule, "dt"),
+    "dt[, month := factor(month.abb[month(date)], levels = month.abb)]")
+})
+
+test_that("a line plot ticks its date axis at the spacing asked for", {
+  spec <- line_spec(x_time_class = "date", x_time_unit = "year",
+                    x_time_labels = "%Y")
+  expect_equal(gs_code_time_scale(spec),
+               "scale_x_date(date_breaks = \"1 year\", date_labels = \"%Y\") +")
+
+  # Either half stands on its own: a spacing with ggplot2's own tick text, or
+  # ggplot2's own spacing relabelled.
+  expect_equal(gs_code_time_scale(line_spec(x_time_class = "date",
+                                            x_time_unit = "month")),
+               "scale_x_date(date_breaks = \"1 month\") +")
+  expect_equal(gs_code_time_scale(line_spec(x_time_class = "date",
+                                            x_time_labels = "%b %Y")),
+               "scale_x_date(date_labels = \"%b %Y\") +")
+  # And neither is nothing at all.
+  expect_length(gs_code_time_scale(line_spec(x_time_class = "date")), 0L)
+})
+
+test_that("a quarterly axis is ticked every three months, because ggplot2 has no quarter", {
+  # "1 quarter" is not a unit seq.Date knows: it aborts the figure with
+  # "'from' must be a finite number", which says nothing about what was wrong.
+  expect_equal(gs_code_time_scale(line_spec(x_time_class = "date",
+                                            x_time_unit = "quarter")),
+               "scale_x_date(date_breaks = \"3 months\") +")
+  # A count multiplies the unit rather than being pasted in front of it.
+  expect_equal(gs_code_time_scale(line_spec(x_time_class = "date",
+                                            x_time_unit = "quarter",
+                                            x_time_every = 2)),
+               "scale_x_date(date_breaks = \"6 months\") +")
+  expect_equal(gs_code_time_scale(line_spec(x_time_class = "date",
+                                            x_time_unit = "year",
+                                            x_time_every = 5)),
+               "scale_x_date(date_breaks = \"5 years\") +")
+})
+
+test_that("a date-time axis gets the scale that can draw it", {
+  # The wrong one of the two does not relabel the axis, it refuses to draw it.
+  expect_match(gs_code_time_scale(line_spec(x_time_class = "datetime",
+                                            x_time_unit = "hour")),
+               "^scale_x_datetime\\(")
+  expect_match(gs_code_time_scale(line_spec(x_time_class = "date",
+                                            x_time_unit = "day")),
+               "^scale_x_date\\(")
+})
+
+test_that("an hourly tick spacing is dropped from an axis of plain dates", {
+  # scale_x_date() does not ignore it -- it stops with "invalid specification
+  # of 'breaks'" and no figure appears.
+  expect_equal(line_spec(x_time_class = "date", x_time_unit = "hour")$x_time_unit,
+               "")
+  expect_equal(line_spec(x_time_class = "date", x_time_unit = "minute")$x_time_unit,
+               "")
+  # The same units are fine over a column that carries a time of day.
+  expect_equal(line_spec(x_time_class = "datetime",
+                         x_time_unit = "hour")$x_time_unit, "hour")
+})
+
+test_that("the date axis belongs to the line plot alone", {
+  for (type in setdiff(GS_PLOT_TYPES, GS_LINE)) {
+    spec <- gs_spec(plot_type = type, x = "admit", y = "crp",
+                    x_time_class = "date", x_time_unit = "year")
+    expect_equal(spec$x_time_unit, "", info = type)
+    expect_length(gs_code_time_scale(spec), 0L)
+  }
+  # And to one whose X really is a date.
+  expect_equal(line_spec(x_time_unit = "year")$x_time_unit, "")
+})
+
+test_that("a numeric axis range is dropped on a date axis rather than breaking the figure", {
+  # ggplot2 does not ignore a number handed to a date scale: it stops with
+  # "transform_date() works with objects of class <Date> only" and draws
+  # nothing. The X boxes are numeric, so this is reachable by typing.
+  spec <- line_spec(x_time_class = "date", xlim_min = 1, xlim_max = 9,
+                    ylim_min = 0, ylim_max = 50)
+  coord <- gs_code_coord(spec)
+  expect_false(grepl("xlim", coord, fixed = TRUE))
+  expect_match(coord, "ylim = c(0, 50)", fixed = TRUE)
+
+  # A numeric axis keeps the range it was given.
+  expect_match(gs_code_coord(line_spec(xlim_min = 1, xlim_max = 9)),
+               "xlim = c(1, 9)", fixed = TRUE)
+
+  # End to end: the figure draws instead of aborting.
+  code <- gs_code_plot(spec, "d")
+  expect_s3_class(gs_eval_plot(code, dated_line()), "ggplot")
+})
+
+test_that("a date axis is titled by its unit unless the user named it", {
+  # The column plotted is still a column of dates; what the ticks read is what
+  # the axis is now about.
+  expect_match(gs_code_labs(line_spec(x_time_class = "date",
+                                      x_time_unit = "year"), "colour", FALSE),
+               "x = \"Year\"", fixed = TRUE)
+  expect_match(gs_code_labs(line_spec(x_time_class = "date",
+                                      x_time_unit = "month"), "colour", FALSE),
+               "x = \"Month\"", fixed = TRUE)
+  # A typed label still wins, and no unit means no title at all.
+  expect_match(gs_code_labs(line_spec(x_time_class = "date",
+                                      x_time_unit = "year",
+                                      lab_x = "Admission"), "colour", FALSE),
+               "x = \"Admission\"", fixed = TRUE)
+  expect_length(gs_code_labs(line_spec(x_time_class = "date"), "colour", FALSE),
+                0L)
+})
+
+test_that("a date axis draws, ticked and labelled as it was asked for", {
+  spec <- line_spec(x_time_class = "date", x_time_unit = "year",
+                    x_time_labels = "%Y")
+  code <- gs_code_plot(spec, "d")
+  p <- gs_eval_plot(code, dated_line())
+  expect_s3_class(p, "ggplot")
+
+  built <- ggplot2::ggplot_build(p)
+  labels <- built$layout$panel_params[[1L]]$x$get_labels()
+  labels <- labels[!is.na(labels)]
+  # Three calendar years of data, ticked once a year and read as bare years.
+  expect_true(all(grepl("^[0-9]{4}$", labels)))
+  expect_true(all(c("2021", "2022", "2023") %in% labels))
+  expect_equal(p$labels$x, "Year")
+})
+
+test_that("the generated code runs for every time resolution", {
+  # Each resolution goes into the data through the same line the script prints,
+  # and the figure drawn from the result is a real one.
+  days <- as.Date("2021-01-04") + seq(0, 1080, by = 21)
+  dt <- data.table::data.table(
+    d = days,
+    ts = as.POSIXct(paste(days, "06:20:00"), tz = "UTC") +
+      (seq_along(days) %% 20L) * 1237,
+    y = as.numeric(seq_along(days))
+  )
+  for (u in GS_TIME_UNIT_VALUES) {
+    src <- if (u %in% GS_TIME_OF_DAY_UNITS) "ts" else "d"
+    rule <- gs_cut(src, method = "period", unit = u)
+    out <- gs_apply_cuts(dt, list(rule))
+    expect_null(attr(out, "gs_cut_error"), info = u)
+
+    spec <- gs_spec(plot_type = "Boxplot", x = rule$new, y = "y")
+    code <- gs_code_plot(spec, "d")
+    expect_s3_class(gs_eval_plot(code, out), "ggplot")
+  }
+})
+
+# --- what the error bar stands for --------------------------------------------
+
+err_data <- function() {
+  set.seed(7)
+  d <- data.table::data.table(
+    arm = factor(rep(c("Control", "Treated"), each = 60)),
+    bp = c(stats::rnorm(60, 140, 12), stats::rnorm(60, 132, 12)),
+    died = c(stats::rbinom(60, 1, 0.30), stats::rbinom(60, 1, 0.12))
+  )
+  d
+}
+
+err_bars <- function(d, err_type, y, level = 0.95) {
+  spec <- gs_spec(plot_type = GS_DOT, x = "arm", y = y,
+                  err_type = err_type, err_level = level)
+  code <- c(gs_code_preamble(spec), gs_code_plot(spec, "d"))
+  ggplot2::ggplot_build(gs_eval_plot(code, d))$data[[1L]]
+}
+
+test_that("the mean interval is the one t.test would give", {
+  # Written out rather than taken from Hmisc's smean.cl.normal, so the claim
+  # that it is the same interval is worth checking rather than asserting.
+  d <- err_data()
+  bars <- err_bars(d, "normal", "bp")
+  ref <- vapply(split(d$bp, d$arm), function(v) stats::t.test(v)$conf.int,
+                numeric(2L))
+  expect_equal(bars$ymin, unname(ref[1L, ]))
+  expect_equal(bars$ymax, unname(ref[2L, ]))
+
+  # And it is a confidence interval, which is to say wider than one standard
+  # error either side -- the difference the control exists to let you state.
+  se <- err_bars(d, "se", "bp")
+  expect_true(all(bars$ymax - bars$ymin > se$ymax - se$ymin))
+  expect_equal(bars$y, se$y)
+})
+
+test_that("the confidence level is the one that was asked for", {
+  d <- err_data()
+  ninety <- err_bars(d, "normal", "bp", 0.90)
+  ninety_nine <- err_bars(d, "normal", "bp", 0.99)
+  expect_true(all(ninety_nine$ymax - ninety_nine$ymin >
+                    ninety$ymax - ninety$ymin))
+  ref <- vapply(split(d$bp, d$arm),
+                function(v) stats::t.test(v, conf.level = 0.99)$conf.int,
+                numeric(2L))
+  expect_equal(ninety_nine$ymin, unname(ref[1L, ]))
+})
+
+test_that("the exact proportion interval is Clopper-Pearson", {
+  d <- err_data()
+  bars <- err_bars(d, "exact", "died")
+  ref <- vapply(split(d$died, d$arm),
+                function(v) stats::binom.test(sum(v), length(v))$conf.int,
+                numeric(2L))
+  expect_equal(bars$ymin, unname(ref[1L, ]))
+  expect_equal(bars$ymax, unname(ref[2L, ]))
+  expect_equal(bars$y, unname(vapply(split(d$died, d$arm), mean, numeric(1L))))
+})
+
+test_that("the Wilson interval is the score interval, not a Wald one", {
+  # prop.test(correct = FALSE) is the same interval, so it is the reference.
+  d <- err_data()
+  bars <- err_bars(d, "wilson", "died")
+  ref <- vapply(split(d$died, d$arm), function(v)
+    suppressWarnings(stats::prop.test(sum(v), length(v),
+                                      correct = FALSE)$conf.int),
+    numeric(2L))
+  expect_equal(bars$ymin, unname(ref[1L, ]), tolerance = 1e-8)
+  expect_equal(bars$ymax, unname(ref[2L, ]), tolerance = 1e-8)
+})
+
+test_that("a proportion interval stays inside 0 and 1 and never collapses", {
+  # The reason the two proportion methods are here at all. A mean plus or minus
+  # a standard error on a group where nobody had the outcome has zero width and
+  # claims certainty; both of these keep a real upper end.
+  none <- data.table::data.table(arm = factor(rep("A", 25L)),
+                                 died = rep(0L, 25L))
+  all_of_them <- data.table::data.table(arm = factor(rep("A", 25L)),
+                                        died = rep(1L, 25L))
+  for (type in GS_ERR_PROP_TYPES) {
+    empty <- err_bars(none, type, "died")
+    expect_equal(empty$y, 0)
+    expect_equal(empty$ymin, 0)
+    expect_gt(empty$ymax, 0)
+    expect_lte(empty$ymax, 1)
+
+    full <- err_bars(all_of_them, type, "died")
+    expect_equal(full$y, 1)
+    expect_equal(full$ymax, 1)
+    expect_lt(full$ymin, 1)
+    expect_gte(full$ymin, 0)
+  }
+})
+
+test_that("a single observation gets a point and no interval", {
+  # qt() at zero degrees of freedom is NaN and sd() of one value is NA, so this
+  # is guarded rather than left to produce a bar of unknown length.
+  one <- data.table::data.table(arm = factor("A"), bp = 140)
+  bars <- err_bars(one, "normal", "bp")
+  expect_equal(bars$y, 140)
+  expect_true(is.na(bars$ymin))
+  expect_true(is.na(bars$ymax))
+})
+
+test_that("the standard error is still what a Dot + Error draws by default", {
+  # The setting is new; the figure it makes when nothing is chosen is not.
+  spec <- gs_spec(plot_type = GS_DOT, x = "arm", y = "bp")
+  expect_equal(spec$err_type, "se")
+  expect_equal(gs_code_dot_geom(spec),
+               "stat_summary(fun.data = mean_se, geom = \"pointrange\")")
+  # ggplot2 supplies mean_se, so the default needs nothing defined above it.
+  expect_length(gs_code_preamble(spec), 0L)
+})
+
+test_that("each interval brings the helper that computes it, and only it", {
+  for (type in setdiff(GS_ERR_TYPES, "se")) {
+    spec <- gs_spec(plot_type = GS_DOT, x = "arm", y = "bp", err_type = type)
+    preamble <- gs_code_preamble(spec)
+    expect_gt(length(preamble), 0L)
+    # The layer names the function, and the function is defined above it.
+    fun <- sub("^stat_summary\\(fun.data = ([^,]+),.*$", "\\1",
+               gs_code_dot_geom(spec))
+    expect_true(any(grepl(paste0("^", fun, " <- function"), preamble)),
+                info = type)
+    expect_match(gs_code_dot_geom(spec), "fun.args = list(conf = 0.95)",
+                 fixed = TRUE)
+  }
+})
+
+test_that("the error bar setting cannot reach another plot type's code", {
+  # As with every other option that belongs to one type: a setting left behind
+  # would otherwise call a helper that is no longer being defined.
+  for (type in setdiff(GS_PLOT_TYPES, GS_DOT)) {
+    spec <- gs_spec(plot_type = type, x = "arm", y = "bp", err_type = "wilson")
+    expect_equal(spec$err_type, "se", info = type)
+  }
+})
+
+test_that("a proportion interval is refused for a measurement, and the reverse", {
+  d <- err_data()
+  info <- gs_classify_vars(d)
+  expect_true("died" %in% gs_vars_of(info, "binary"))
+  expect_false("bp" %in% gs_vars_of(info, "binary"))
+
+  wrong_way <- gs_validate_spec(
+    gs_spec(plot_type = GS_DOT, x = "arm", y = "bp", err_type = "wilson"), info)
+  expect_match(wrong_way, "exactly two values")
+
+  # And a 0/1 outcome described by a mean and a standard error is told what to
+  # use instead, rather than only that it is not continuous.
+  other_way <- gs_validate_spec(
+    gs_spec(plot_type = GS_DOT, x = "arm", y = "died", err_type = "se"), info)
+  expect_match(other_way, "proportion intervals")
+
+  for (type in GS_ERR_PROP_TYPES) {
+    expect_length(gs_validate_spec(
+      gs_spec(plot_type = GS_DOT, x = "arm", y = "died", err_type = type),
+      info), 0L)
+  }
+})
+
+test_that("an outcome is recognised however it was written", {
+  # 0/1, TRUE/FALSE, a two-level factor and a two-valued character column are
+  # all ordinary ways to keep a binary outcome, and all four are accepted.
+  expect_equal(gs_binary_values(c(0L, 1L, 1L)), c("0", "1"))
+  expect_equal(gs_binary_values(c(TRUE, FALSE, NA)), c("FALSE", "TRUE"))
+  expect_equal(gs_binary_values(factor(c("No", "Yes"))), c("No", "Yes"))
+  expect_equal(gs_binary_values(c("No", "Yes", "Yes")), c("No", "Yes"))
+  for (col in list(c(0L, 1L), c(TRUE, FALSE), factor(c("No", "Yes")),
+                   c("No", "Yes"))) {
+    expect_true(gs_is_binary_col(col))
+  }
+
+  # A declared level nobody had is still one of the two, and so is the unseen
+  # half of a 0/1 column: a stratum where the outcome never happened is a
+  # proportion of 0, which is the case these intervals are most useful for.
+  expect_equal(gs_binary_values(factor(c("No", "No"), levels = c("No", "Yes"))),
+               c("No", "Yes"))
+  expect_equal(gs_binary_values(rep(0L, 5L)), c("0", "1"))
+
+  # Three values is not an outcome, and neither is a measurement or a date.
+  expect_false(gs_is_binary_col(factor(c("a", "b", "c"))))
+  expect_false(gs_is_binary_col(c(1.5, 0)))
+  expect_false(gs_is_binary_col(as.Date(c("2021-01-01", "2021-01-02"))))
+  # 1/2 is an event coding, which Surv() reads, but it does not say which of
+  # the two values a proportion would be counting.
+  expect_true(gs_is_event_col(c(1L, 2L)))
+  expect_false(gs_is_binary_col(c(1L, 2L)))
+})
+
+test_that("the second value is counted unless another one is chosen", {
+  # R's own convention -- the reference level first, the level being modelled
+  # second -- but a default rather than a rule, because a factor declared
+  # c("Yes", "No") means the opposite of one declared the other way round.
+  d <- data.table::data.table(
+    num = c(0L, 1L),
+    lgl = c(FALSE, TRUE),
+    fct = factor(c("No", "Yes"), levels = c("No", "Yes")),
+    rev = factor(c("No", "Yes"), levels = c("Yes", "No")),
+    bp = c(1.5, 2.5)
+  )
+  expect_equal(gs_err_event(d, "num"), "1")
+  expect_equal(gs_err_event(d, "lgl"), "TRUE")
+  expect_equal(gs_err_event(d, "fct"), "Yes")
+  expect_equal(gs_err_event(d, "rev"), "No")
+  expect_equal(gs_err_event(d, "fct", "No"), "No")
+
+  # A choice left behind by a different Y variable is not carried over, and a
+  # column that is not an outcome has nothing to count.
+  expect_equal(gs_err_event(d, "num", "Yes"), "1")
+  expect_equal(gs_err_event(d, "bp"), "")
+  expect_equal(gs_err_event(d, ""), "")
+  expect_equal(gs_err_event(d, "gone"), "")
+})
+
+test_that("a proportion counts a value in the figure rather than recoding first", {
+  # Written into the aes() so that an outcome kept as a factor is drawn as it
+  # is, and so that the figure says which of the two values it counted.
+  spec <- gs_spec(plot_type = GS_DOT, x = "arm", y = "outcome",
+                  err_type = "wilson", err_event = "Yes")
+  expect_equal(gs_y_expr(spec), "as.integer(outcome == \"Yes\")")
+  expect_match(gs_code_labs(spec, "colour", FALSE),
+               'y = "Proportion outcome = Yes"', fixed = TRUE)
+
+  # Every other figure reads the column itself.
+  expect_equal(gs_y_expr(gs_spec(plot_type = "Boxplot", y = "bp")), "bp")
+  expect_equal(gs_y_expr(gs_spec(plot_type = GS_DOT, x = "arm", y = "bp",
+                                 err_type = "normal")), "bp")
+  # And a counted value cannot survive a switch back to a mean.
+  expect_equal(gs_spec(plot_type = GS_DOT, y = "bp", err_type = "se",
+                       err_event = "Yes")$err_event, "")
+})
+
+test_that("the same outcome gives the same interval however it was written", {
+  set.seed(11)
+  ev <- stats::rbinom(60L, 1L, 0.35)
+  d <- data.table::data.table(
+    arm = factor(rep(c("A", "B"), each = 30L)),
+    num = ev,
+    lgl = as.logical(ev),
+    fct = factor(ifelse(ev == 1L, "Yes", "No"), levels = c("No", "Yes")),
+    chr = ifelse(ev == 1L, "Yes", "No")
+  )
+  ref <- vapply(split(ev, d$arm), function(x)
+    suppressWarnings(stats::prop.test(sum(x), length(x),
+                                      correct = FALSE)$conf.int),
+    numeric(2L))
+
+  for (v in c("num", "lgl", "fct", "chr")) {
+    spec <- gs_spec(plot_type = GS_DOT, x = "arm", y = v, err_type = "wilson",
+                    err_event = gs_err_event(d, v))
+    code <- c(gs_code_preamble(spec), gs_code_plot(spec, "d"))
+    bars <- ggplot2::ggplot_build(gs_eval_plot(code, d))$data[[1L]]
+    expect_equal(bars$ymin, unname(ref[1L, ]), tolerance = 1e-8)
+    expect_equal(bars$ymax, unname(ref[2L, ]), tolerance = 1e-8)
+  }
+})
+
+test_that("counting the other value gives the other proportion", {
+  d <- data.table::data.table(
+    arm = factor(rep("A", 20L)),
+    fct = factor(rep(c("No", "Yes"), c(15L, 5L)), levels = c("No", "Yes"))
+  )
+  p_of <- function(event) {
+    spec <- gs_spec(plot_type = GS_DOT, x = "arm", y = "fct",
+                    err_type = "wilson", err_event = event)
+    ggplot2::ggplot_build(gs_eval_plot(
+      c(gs_code_preamble(spec), gs_code_plot(spec, "d")), d))$data[[1L]]$y
+  }
+  expect_equal(p_of("Yes"), 0.25)
+  expect_equal(p_of("No"), 0.75)
+})
+
+test_that("an unusable error bar or level falls back rather than breaking", {
+  expect_equal(gs_spec(plot_type = GS_DOT, y = "bp",
+                       err_type = "bootstrap")$err_type, "se")
+  for (bad in list(NA, 0, 1, 1.5, "wide")) {
+    expect_equal(gs_spec(plot_type = GS_DOT, y = "bp", err_type = "normal",
+                         err_level = bad)$err_level, 0.95)
+  }
+  expect_equal(gs_spec(plot_type = GS_DOT, y = "bp", err_type = "normal",
+                       err_level = 0.9)$err_level, 0.9)
+})
+
+# --- turning the tick labels --------------------------------------------------
+
+test_that("a tick angle is emitted after the theme, or not at all", {
+  flat <- gs_spec(plot_type = "Boxplot", x = "arm", y = "bp")
+  expect_length(gs_code_tick_angle(flat), 0L)
+
+  turned <- gs_spec(plot_type = "Boxplot", x = "arm", y = "bp",
+                    tick_angle_x = 45)
+  expect_equal(gs_code_tick_angle(turned),
+               "theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1))")
+  # Upright text is centred on its tick rather than pulled off the end of it.
+  expect_match(gs_code_tick_angle(gs_spec(tick_angle_x = 90)),
+               "angle = 90, hjust = 1, vjust = 0.5", fixed = TRUE)
+  expect_match(gs_code_tick_angle(gs_spec(tick_angle_y = 90)),
+               "axis.text.y = element_text(angle = 90, hjust = 0.5", fixed = TRUE)
+
+  # Both axes come out as one theme() call.
+  both <- gs_code_tick_angle(gs_spec(tick_angle_x = 45, tick_angle_y = 30))
+  expect_length(both, 1L)
+  expect_match(both, "axis.text.x", fixed = TRUE)
+  expect_match(both, "axis.text.y", fixed = TRUE)
+
+  # An angle that is not on the list is not an angle.
+  expect_length(gs_code_tick_angle(gs_spec(tick_angle_x = 17)), 0L)
+  expect_length(gs_code_tick_angle(gs_spec(tick_angle_x = NA)), 0L)
+})
+
+test_that("the turned labels are still turned in the figure that is drawn", {
+  d <- data.table::data.table(arm = factor(c("A", "A", "B", "B")),
+                              bp = c(1, 2, 3, 4))
+  spec <- gs_spec(plot_type = "Boxplot", x = "arm", y = "bp",
+                  tick_angle_x = 45, tick_angle_y = 90)
+  code <- gs_code_plot(spec, "d")
+  # theme_bw() would put them back flat if it came second.
+  expect_lt(grep("theme_bw", code), grep("axis.text.x", code))
+  p <- gs_eval_plot(code, d)
+  expect_equal(p$theme$axis.text.x$angle, 45)
+  expect_equal(p$theme$axis.text.y$angle, 90)
+  expect_s3_class(p, "ggplot")
+})
+
+test_that("a number-at-risk table still hides the axis it shares", {
+  # Both settings write axis.text.x, so the blanking has to come last.
+  spec <- gs_spec(plot_type = GS_KM, time = "t", event = "e", km_risk = TRUE,
+                  tick_angle_x = 45)
+  code <- gs_code_plot(spec, "d", shared_x = TRUE)
+  expect_lt(grep("angle = 45", code), grep("axis.text.x = element_blank", code))
+})

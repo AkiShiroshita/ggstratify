@@ -50,6 +50,35 @@ t_cens <- pmin(rexp(n, rate = 0.0008), 365)
 p_unmeasured <- c(Mild = 0.28, Moderate = 0.10, Severe = 0.02)[severity]
 crp[runif(n) < p_unmeasured] <- NA_real_
 
+# When each patient came in, over three calendar years. The seasonality is in
+# the case mix rather than in the total: moderate and severe presentations
+# cluster in the winter, mild ones spread into the summer, so the two partly
+# cancel in the monthly counts and separate sharply in what those months
+# contain. Summer is 14% moderate-or-severe and winter 60%, which carries CRP
+# from about 6 to about 10.5 and length of stay with it.
+#
+# That is the point of the column: a season read off it shows a real
+# difference rather than noise, so the time-resolution method has something to
+# demonstrate on the shipped data. The tilt is taken from `severity`, which is
+# already drawn, so nothing above changes.
+#
+# Drawn last, after the CRP missingness, for the same reason that block gives:
+# every draw above keeps the stream position it already had.
+month_angle <- (seq_len(12L) - 1L) * pi / 6      # January at the peak
+winter_pull <- c(Mild = -0.55, Moderate = 0.65, Severe = 1.10)[severity]
+admit_month <- vapply(seq_len(n), function(i) {
+  sample.int(12L, 1L, prob = exp(winter_pull[[i]] * cos(month_angle)))
+}, integer(1L))
+admit_year <- sample(2021:2023, n, replace = TRUE)
+
+# Uniform within the month it fell in, so February is short and leap years are
+# right without a table of month lengths.
+month_start <- as.Date(sprintf("%d-%02d-01", admit_year, admit_month))
+month_end <- as.Date(sprintf("%d-%02d-01",
+                             ifelse(admit_month == 12L, admit_year + 1L, admit_year),
+                             ifelse(admit_month == 12L, 1L, admit_month + 1L)))
+admit_date <- month_start + floor(runif(n) * as.numeric(month_end - month_start))
+
 epi_cohort <- data.frame(
   id = sprintf("P%04d", seq_len(n)),
   age = age,
@@ -62,6 +91,7 @@ epi_cohort <- data.frame(
   los_days = los,
   fu_days = pmax(round(pmin(t_event, t_cens)), 1),
   death = as.integer(t_event <= t_cens),
+  admit_date = admit_date,
   stringsAsFactors = FALSE
 )
 

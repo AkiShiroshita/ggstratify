@@ -12,6 +12,7 @@ GS_PLOT_TYPES <- c("Boxplot", "Density", "Dot + Error", "Dotplot",
 # Spelled once each, because they are tested against all over the package.
 GS_KM <- "Kaplan-Meier curve"
 GS_LINE <- "Line"
+GS_DOT <- "Dot + Error"
 
 GS_THEMES <- c(
   "bw"        = "theme_bw()",
@@ -42,6 +43,43 @@ GS_PALETTES <- list(
                          "YlOrBr", "YlOrRd"))
 )
 
+# What the bar through a Dot + Error point stands for.
+#
+# The standard error is the default because it is what the figure has always
+# drawn, and because it is a statement about the mean rather than about where a
+# further observation would fall. A confidence interval answers the question
+# people usually mean to ask, so it is offered beside it.
+#
+# The two proportion intervals exist because a Wald interval on a proportion is
+# wrong in exactly the cases that matter: near 0 or 1 it runs outside the range
+# a proportion can take, and when nobody had the outcome it has zero width and
+# claims certainty. Clopper-Pearson inverts the binomial test and so never
+# under-covers; Wilson inverts the score test and is the better-centred of the
+# two at small n. Which to prefer is a judgement, so both are offered.
+GS_ERR_TYPES <- c(
+  "Standard error of the mean"                = "se",
+  "Confidence interval (mean)"                = "normal",
+  "Confidence interval (proportion, exact)"   = "exact",
+  "Confidence interval (proportion, Wilson)"  = "wilson"
+)
+
+# The intervals that describe a proportion, and so need a Y variable coded as
+# 0 and 1 rather than a measurement.
+GS_ERR_PROP_TYPES <- c("exact", "wilson")
+
+# The interval types that carry a confidence level. A standard error does not:
+# it is one standard error, not a coverage statement.
+GS_ERR_CI_TYPES <- c("normal", "exact", "wilson")
+
+GS_ERR_LEVELS <- c("90%" = 0.90, "95%" = 0.95, "99%" = 0.99)
+
+# Tick label angles. Twelve month names or a set of long factor levels do not
+# fit side by side along an axis, and ggplot2 draws them overlapping rather
+# than dropping any, so turning them is the way out.
+GS_TICK_ANGLES <- c("Horizontal" = "0", "30 degrees" = "30",
+                    "45 degrees" = "45", "60 degrees" = "60",
+                    "Vertical" = "90")
+
 # Plot types that describe the distribution of a single continuous variable
 # on the x axis; they have no y variable.
 GS_XONLY_TYPES <- c("Density", "Histogram")
@@ -53,14 +91,16 @@ GS_XY_TYPES <- c("Line", "Scatter")
 # nothing summarised in between, which is what a smoother has to have.
 GS_SMOOTH_TYPES <- c("Line", "Scatter")
 
-# The ways a column can be turned into a categorical one. The first three
-# read a continuous variable's values; the fourth reads only whether there is
-# a value at all, so it applies to a column of any type.
+# The ways a column can be turned into another one. The first three read a
+# continuous variable's values; the fourth reads only whether there is a value
+# at all, so it applies to a column of any type; the fifth reads a date or a
+# time and asks at what resolution to look at it.
 GS_CUT_METHODS <- c(
   "Quantiles (equal-sized groups)" = "quantile",
   "Equal-width bins"               = "equal",
   "Custom cut points"              = "breaks",
-  "Missing vs observed"            = "missing"
+  "Missing vs observed"            = "missing",
+  "Time resolution"                = "period"
 )
 
 # The methods that read values rather than the absence of them, and so need a
@@ -80,8 +120,121 @@ GS_OBSERVED_LABEL <- "Observed"
 GS_MISSING_LABEL <- "Missing"
 
 # The suffix each method gives a derived column when the user has not named it.
+# "period" is not here: its suffix names the resolution rather than the method,
+# so that a date read by year and the same date read by month do not both come
+# out as `admit_period`. See GS_TIME_SUFFIX.
 GS_CUT_SUFFIX <- c(quantile = "_cat", equal = "_cat", breaks = "_cat",
                    missing = "_missing")
+
+# --- time resolutions --------------------------------------------------------
+
+# The two families are different questions, not two spellings of one. A
+# calendar period is a point on the calendar: every row in "2021-03" is in the
+# same month of the same year, and the values run along real time, which is
+# what a trend is drawn against. A position in the cycle throws the year away
+# and pools every March together, which is what a seasonal pattern is.
+#
+# Shaped as a list so that selectInput() renders the two families as
+# <optgroup>s, the way GS_PALETTES above does.
+GS_TIME_UNITS <- list(
+  "Calendar period" = list(
+    "Year"    = "year",
+    "Quarter" = "quarter",
+    "Month"   = "month",
+    "Week"    = "week",
+    "Day"     = "day",
+    "Hour"    = "hour",
+    "Minute"  = "minute"
+  ),
+  "Position in the cycle" = list(
+    "Month of the year (Jan-Dec)" = "month_of_year",
+    "Season"                      = "season",
+    "Quarter of the year (Q1-Q4)" = "quarter_of_year",
+    "Day of the week (Mon-Sun)"   = "day_of_week",
+    "Hour of the day (00-23)"     = "hour_of_day"
+  )
+)
+
+# The same two families flat, because the validator and the code generator
+# branch on them and neither wants to walk the nested list.
+GS_PERIOD_UNITS <- c("year", "quarter", "month", "week", "day", "hour",
+                     "minute")
+GS_CYCLE_UNITS <- c("month_of_year", "season", "quarter_of_year",
+                    "day_of_week", "hour_of_day")
+GS_TIME_UNIT_VALUES <- c(GS_PERIOD_UNITS, GS_CYCLE_UNITS)
+
+# The resolutions that read a clock rather than a calendar. A plain Date has no
+# clock -- data.table's hour() answers 0 for every row rather than failing --
+# so these are refused for one, with a reason, instead of silently making a
+# column with a single value in it.
+GS_TIME_OF_DAY_UNITS <- c("hour", "minute", "hour_of_day")
+
+# The four seasons, in the order they follow the start month the user picks.
+# Spring is first because the start month names the start of spring: setting it
+# to March gives the northern hemisphere, September the southern.
+GS_SEASONS <- c("Spring", "Summer", "Fall", "Winter")
+GS_SEASON_START <- 3L
+
+# The suffix each resolution gives a derived column. Two resolutions can share
+# one -- a month of the year and a month of the calendar are both "_month" --
+# because gs_cut_name() already resolves a collision by counting, and
+# `admit_month` and `admit_month2` read better than the alternative of spelling
+# `admit_month_of_year` out in full.
+GS_TIME_SUFFIX <- c(
+  year = "_year", quarter = "_quarter", month = "_month", week = "_week",
+  day = "_day", hour = "_hour", minute = "_minute",
+  month_of_year = "_month", season = "_season", quarter_of_year = "_quarter",
+  day_of_week = "_weekday", hour_of_day = "_hour"
+)
+
+# The `date_breaks` string each tick spacing becomes. Quarters are "3 months"
+# because ggplot2 has no quarter: "1 quarter" aborts the figure with
+# "'from' must be a finite number", which says nothing about what was wrong.
+GS_X_TIME_BREAKS <- c(
+  minute = "min", hour = "hour", day = "day", week = "week",
+  month = "month", quarter = "3 months", year = "year"
+)
+
+# The tick spacings offered for the X axis, label to value. The same seven
+# words as the calendar periods above, because a tick every month and a
+# variable read by month are the same idea applied to the axis rather than to
+# the data.
+GS_X_TIME_TICKS <- c(Minute = "minute", Hour = "hour", Day = "day",
+                     Week = "week", Month = "month", Quarter = "quarter",
+                     Year = "year")
+
+# The tick spacings a plain date axis can take. An hour and a minute are not
+# among them: scale_x_date() refuses those breaks outright ("invalid
+# specification of 'breaks'"), and a column of dates has no hours to tick at
+# anyway.
+GS_X_TIME_DATE_UNITS <- c("day", "week", "month", "quarter", "year")
+
+# What each resolution is called when it names an axis. Used only when the
+# user has left the X-axis label empty; see gs_code_labs().
+GS_TIME_UNIT_LABEL <- c(
+  year = "Year", quarter = "Quarter", month = "Month", week = "Week",
+  day = "Day", hour = "Hour", minute = "Minute"
+)
+
+# The tick label formats offered for a date axis. The name of each is the text
+# the ticks will actually read, so the control shows its own effect. Blank is
+# ggplot2's own choice, which is a good one until the figure has to match a
+# particular house style.
+#
+# %b and %a are the month and day names of the R session's locale, so a figure
+# built under a Japanese locale reads differently from one built under an
+# English one. That is a property of strftime, not something to paper over: the
+# generated code says exactly what was asked for.
+GS_TIME_LABELS <- c(
+  "Automatic"  = "",
+  "2024"       = "%Y",
+  "2024-03"    = "%Y-%m",
+  "Mar 2024"   = "%b %Y",
+  "Mar"        = "%b",
+  "2024-03-15" = "%Y-%m-%d",
+  "Mar 15"     = "%b %d",
+  "15:04"      = "%H:%M"
+)
 
 # The file formats a figure can be written in. PNG goes through ragg; SVG is a
 # vector format, so a figure stays sharp at any size and can still be edited in
@@ -113,6 +266,13 @@ gs_spec <- function(...) {
     min_n       = 10L,
     show_n      = TRUE,
     jitter      = FALSE,
+    err_type    = "se",           # Dot + Error: see GS_ERR_TYPES
+    err_level   = 0.95,           # the coverage of an interval, not of an SE
+    # Which of a binary outcome's two values counts as the outcome having
+    # happened. Read from the data by the server, as group_continuous is,
+    # because the answer is a property of the column rather than of a control.
+    err_event   = "",
+
     line_points = FALSE,          # Line: draw the observations as well
     smooth      = FALSE,          # LOWESS smoother, see GS_SMOOTH_TYPES
     smooth_se   = FALSE,
@@ -130,6 +290,20 @@ gs_spec <- function(...) {
     xlim_max    = NA_real_,
     ylim_min    = NA_real_,
     ylim_max    = NA_real_,
+    # The Line plot's date axis. `x_time_unit` is how far apart the ticks are
+    # and `x_time_labels` is a strftime format for what they read; both are
+    # blank for the axis ggplot2 would draw on its own.
+    x_time_unit   = "",
+    x_time_every  = 1,
+    x_time_labels = "",
+    # Whether the X column holds a date or a date-time, which decides between
+    # scale_x_date() and scale_x_datetime(). Set by the server from the
+    # classified data, the way group_continuous is; "" in a spec built by hand,
+    # which is what keeps the scale out of a figure whose X is a number.
+    x_time_class  = "",
+    # Tick label angles, in degrees counter-clockwise. 0 is ggplot2's own.
+    tick_angle_x = 0,
+    tick_angle_y = 0,
     theme       = "theme_bw()",
     palette     = "",
     title       = "",
@@ -166,6 +340,14 @@ GS_STRAT_MODES <- c(
   "Each variable separately" = "independent",
   "Every combination"        = "crossed"
 )
+
+#' One tick angle, or 0 when it is not one of the angles offered
+#' @keywords internal
+#' @noRd
+gs_tick_angle <- function(x) {
+  a <- gs_num(x, 0)
+  if (is.na(a) || !as.character(a) %in% GS_TICK_ANGLES) 0 else a
+}
 
 #' Every variable that splits the data into panels or figures
 #'
@@ -258,7 +440,39 @@ gs_normalize_spec <- function(spec) {
     spec$id <- ""
     spec$line_points <- FALSE
   }
+  # The date axis belongs to the Line plot, and to a Line plot whose X really
+  # is a date. Cleared rather than reported: a setting left in a box the user
+  # cannot currently see is not a mistake worth refusing to draw a figure over,
+  # and the control says beside itself what it applies to.
+  if (!identical(spec$plot_type, GS_LINE) || !nzchar(spec$x_time_class)) {
+    spec$x_time_unit <- ""
+    spec$x_time_labels <- ""
+  }
+  if (!spec$x_time_unit %in% c("", GS_PERIOD_UNITS)) spec$x_time_unit <- ""
+  # A date carries no time of day, and scale_x_date() does not merely ignore an
+  # hourly tick spacing -- it refuses the figure. Dropped here, where the
+  # column's type is known, rather than left to fail at draw time.
+  if (identical(spec$x_time_class, "date") &&
+      !spec$x_time_unit %in% c("", GS_X_TIME_DATE_UNITS)) {
+    spec$x_time_unit <- ""
+  }
+  # The two settings are independent: a format with no spacing relabels the
+  # ticks ggplot2 chose, which is often all that is wanted. A count without a
+  # spacing to count is not, so it goes back to one.
+  every <- as.integer(gs_num(spec$x_time_every, 1))
+  spec$x_time_every <- if (!nzchar(spec$x_time_unit) || is.na(every) ||
+                           every < 1L) 1L else every
+  # The error bar belongs to one plot type, so a setting left behind by
+  # another can never reach the generated code -- and, with it, the helper
+  # function that setting would have needed defining.
+  if (!identical(spec$plot_type, GS_DOT)) spec$err_type <- "se"
+  if (!spec$err_type %in% GS_ERR_PROP_TYPES) spec$err_event <- ""
+  if (!spec$err_type %in% GS_ERR_TYPES) spec$err_type <- "se"
+  level <- gs_num(spec$err_level, 0.95)
+  spec$err_level <- if (is.na(level) || level <= 0 || level >= 1) 0.95 else level
   if (!spec$plot_type %in% GS_SMOOTH_TYPES) spec$smooth <- FALSE
+  spec$tick_angle_x <- gs_tick_angle(spec$tick_angle_x)
+  spec$tick_angle_y <- gs_tick_angle(spec$tick_angle_y)
   if (!spec$strat_mode %in% GS_STRAT_MODES) spec$strat_mode <- "independent"
   if (!spec$format %in% GS_FORMATS) spec$format <- "png"
   # Nothing is grouped, so nothing is on a continuous scale either.
@@ -272,9 +486,15 @@ gs_normalize_spec <- function(spec) {
 }
 
 #' Turn the Shiny inputs into a spec
+#'
+#' `x_time_class` is a property of the data rather than of a control, so it
+#' arrives as an argument. It has to be here rather than assigned afterwards:
+#' `gs_spec()` normalizes what it builds, and normalizing is what clears a
+#' date-axis setting that does not apply -- which it would do to every one of
+#' them if it were told only later that the X column is a date.
 #' @keywords internal
 #' @noRd
-gs_spec_from_input <- function(input) {
+gs_spec_from_input <- function(input, x_time_class = "", err_event = "") {
   none <- function(x) if (is.null(x) || identical(x, "") || identical(x, GS_NONE)) "" else x
   gs_spec(
     plot_type  = input$plot_type %||% "Boxplot",
@@ -292,10 +512,19 @@ gs_spec_from_input <- function(input) {
     # NULL before the checkbox has registered; its UI default is TRUE.
     show_n     = !identical(input$show_n, FALSE),
     jitter     = isTRUE(input$jitter),
+    err_type   = input$err_type %||% "se",
+    err_level  = gs_num(input$err_level, 0.95),
+    err_event  = err_event,
     line_points = isTRUE(input$line_points),
     smooth     = isTRUE(input$smooth),
     smooth_se  = isTRUE(input$smooth_se),
     smooth_span = gs_num(input$smooth_span, 0.75),
+    x_time_unit   = none(input$x_time_unit),
+    x_time_every  = gs_num(input$x_time_every, 1),
+    x_time_labels = input$x_time_labels %||% "",
+    x_time_class  = x_time_class,
+    tick_angle_x  = gs_num(input$tick_angle_x, 0),
+    tick_angle_y  = gs_num(input$tick_angle_y, 0),
     binwidth   = gs_num(input$binwidth),
     alpha      = gs_num(input$alpha, 0.6),
     bw_adjust  = gs_num(input$bw_adjust, 1),
@@ -399,7 +628,27 @@ gs_validate_spec <- function(spec, info = NULL) {
   if (!is.null(info) && nrow(info)) {
     continuous <- gs_vars_of(info, "continuous")
     needs_cont <- if (type %in% GS_XONLY_TYPES) spec$x else spec$y
-    if (nzchar(needs_cont) && !needs_cont %in% continuous) {
+    # A proportion interval is drawn from an outcome that happened or did not,
+    # so it asks the opposite of the usual question: the Y variable has to hold
+    # two values, which is exactly what disqualifies it as a measurement.
+    if (identical(type, GS_DOT) && spec$err_type %in% GS_ERR_PROP_TYPES) {
+      if (nzchar(spec$y) && !spec$y %in% gs_vars_of(info, "binary")) {
+        problems <- c(problems, sprintf(
+          paste0("A proportion interval counts how often something happened, ",
+                 "so '%s' has to have exactly two values -- 0 and 1, TRUE and ",
+                 "FALSE, or a factor with two levels."),
+          spec$y))
+      }
+    } else if (identical(type, GS_DOT) && nzchar(spec$y) &&
+               spec$y %in% gs_vars_of(info, "binary")) {
+      # A 0/1 column is not a measurement, so the general message is right
+      # about why it is refused and useless about what to do instead. There is
+      # something to do instead, and it is two controls away.
+      problems <- c(problems, sprintf(
+        paste0("'%s' is 0 and 1 rather than a measurement, so a mean and a ",
+               "standard error do not describe it. Set the bar to one of the ",
+               "proportion intervals."), spec$y))
+    } else if (nzchar(needs_cont) && !needs_cont %in% continuous) {
       problems <- c(problems, sprintf(
         "'%s' does not look continuous; %s expects a continuous variable there.",
         needs_cont, type))

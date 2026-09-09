@@ -5,7 +5,7 @@
 \alias{epi_cohort}
 \title{A synthetic clinical cohort}
 \format{
-A data frame with 600 rows and 11 columns:
+A data frame with 600 rows and 12 columns:
 \describe{
 \item{id}{Patient identifier, \code{"P0001"} to \code{"P0600"}.}
 \item{age}{Age in years.}
@@ -21,6 +21,8 @@ tested, more often the milder ones.}
 \item{fu_days}{Days of follow-up, to death or to censoring. Censoring is
 by dropout or by the end of the study at 365 days.}
 \item{death}{\code{1} if the patient died during follow-up, \code{0} if censored.}
+\item{admit_date}{Date of admission, over 2021 to 2023. Moderate and
+severe cases cluster in the winter, mild ones in the summer.}
 }
 }
 \source{
@@ -51,9 +53,19 @@ that pattern is there for.
 The data are simulated. They describe no real patients and support no
 clinical conclusion.
 
+\code{admit_date} is the fourth of these. It spans three calendar years and has
+several hundred distinct values, so it cannot be stratified on as it stands
+-- that is the point of it. Read at a resolution first, by season or by
+month of the year, it becomes a variable with four or twelve levels that can
+be used as a layer like any other. The seasonality is in the case mix rather
+than in the number of admissions: moderate and severe presentations cluster
+in the winter and mild ones spread into the summer, so a season carries a
+real difference in \code{crp} and in \code{los_days} rather than noise.
+
 \code{fu_days} and \code{death} make the data usable for a Kaplan-Meier curve, \code{age}
-for the methods that cut a continuous variable into groups, and \code{crp} for
-the one that splits a variable by whether it has a value.
+for the methods that cut a continuous variable into groups, \code{crp} for the
+one that splits a variable by whether it has a value, and \code{admit_date} for
+the one that reads a date at a chosen resolution.
 }
 \examples{
 str(epi_cohort)
@@ -63,5 +75,10 @@ table(epi_cohort$site)
 
 # Who was not tested, by how ill they were.
 table(epi_cohort$severity, is.na(epi_cohort$crp))
+
+# Too many distinct dates to stratify on, until it is read at a resolution.
+length(unique(epi_cohort$admit_date))
+table(factor(month.abb[data.table::month(epi_cohort$admit_date)],
+             levels = month.abb))
 }
 \keyword{datasets}
