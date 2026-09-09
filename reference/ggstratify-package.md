@@ -10,18 +10,22 @@ of observations behind it, on the figure and on each of its panels;
 strata that contain none are listed rather than dropped, and rows with a
 missing value in a layer variable are excluded and counted. A continuous
 variable can be categorized into quantile groups, equal-width bins or
-user-supplied cut points, and a variable of any type can be turned into
+user-supplied cut points, a variable of any type can be turned into
 whether it is missing or observed, so that the rows a layer would
-exclude become a stratum of their own; either can then be used as a
-layer. The figure types follow those offered by the 'ggplotgui' package
-and add the line plot for change over time, an optional LOWESS smoother,
-and the Kaplan-Meier curve estimated by 'survival', with an optional
-number-at-risk table. Columns are described as they are typed, so
-convert each to the type you mean first. Figures are written as PNG or
-SVG, and the application prints the 'ggplot2' code behind the figure on
-screen, so that a description can be repeated, shared or accounted for
-later. Everything runs locally, with no network access and no AI
-involved.
+exclude become a stratum of their own, and a date or date-time variable
+can be read at a chosen resolution, either as a calendar period or as a
+position in the yearly cycle such as the month or the season; any of
+them can then be used as a layer. The figure types follow those offered
+by the 'ggplotgui' package and add the line plot for change over time,
+an optional LOWESS smoother, and the Kaplan-Meier curve estimated by
+'survival', with an optional number-at-risk table. An error bar can show
+a standard error or a confidence interval, the latter from the t
+distribution for a mean and from the Clopper-Pearson or Wilson method
+for a proportion. Columns are described as they are typed, so convert
+each to the type you mean first. Figures are written as PNG or SVG, and
+the application prints the 'ggplot2' code behind the figure on screen,
+so that a description can be repeated, shared or accounted for later.
+Everything runs locally, with no network access and no AI involved.
 
 ## See also
 
