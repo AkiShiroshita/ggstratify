@@ -125,6 +125,7 @@ gs_cut_expr <- function(cut) {
   v <- gs_bt(cut$var)
   switch(
     cut$method,
+    period   = gs_time_expr(cut, v),
     quantile = sprintf(paste0("cut(%s, breaks = unique(stats::quantile(%s, ",
                               "probs = seq(0, 1, length.out = %s), na.rm = TRUE)), ",
                               "include.lowest = TRUE)"),
@@ -137,6 +138,78 @@ gs_cut_expr <- function(cut) {
                        v, gs_dq(GS_OBSERVED_LABEL), gs_dq(GS_MISSING_LABEL)),
     stop("Unknown cut method: ", cut$method, call. = FALSE)
   )
+}
+
+#' The expression for one time resolution
+#'
+#' Two families, and the difference between them is the point of the control.
+#'
+#' A *calendar period* floors the column to the start of the period and stays a
+#' date. That is deliberate: a year written as `2021-01-01` rather than as the
+#' factor level `"2021"` keeps the column on a date scale, so a trend drawn
+#' against it is spaced by real elapsed time and the axis can still be given
+#' date ticks.
+#'
+#' Down to the day that is `cut()`, which floors a `Date` and a `POSIXct`
+#' alike; `as.IDate()` on the way in makes the one case where `cut()` hands
+#' back a factor rather than a date irrelevant, and honours the column's own
+#' time zone while it converts.
+#'
+#' The hour and the minute are floored by arithmetic instead, and not for
+#' brevity. `as.POSIXct(cut(x, "hour"))` looks right and is not: `cut()`
+#' formats its labels in the column's time zone, `as.POSIXct()` reads them back
+#' in the session's, and the instant moves by the offset between the two -- six
+#' hours, silently, for a UTC column read in US Central. Subtracting the
+#' remainder never leaves the epoch, so the class and the `tzone` survive
+#' untouched.
+#'
+#' A *position in the cycle* throws the year away and pools every March
+#' together. Those come out as a factor whose levels are written down in full,
+#' in calendar order -- January to December, Monday to Sunday, spring to winter
+#' -- because the alternative is `sort()`, and sorting the months of the year
+#' alphabetically puts April first and is never what anyone meant.
+#' @keywords internal
+#' @noRd
+gs_time_expr <- function(cut, v) {
+  switch(
+    cut$unit,
+    # -- calendar period --
+    year    = sprintf('as.IDate(cut(as.IDate(%s), breaks = "year"))', v),
+    quarter = sprintf('as.IDate(cut(as.IDate(%s), breaks = "quarter"))', v),
+    month   = sprintf('as.IDate(cut(as.IDate(%s), breaks = "month"))', v),
+    week    = sprintf('as.IDate(cut(as.IDate(%s), breaks = "week"))', v),
+    day     = sprintf("as.IDate(%s)", v),
+    hour    = sprintf("%s - as.numeric(%s) %%%% 3600", v, v),
+    minute  = sprintf("%s - as.numeric(%s) %%%% 60", v, v),
+    # -- position in the cycle --
+    month_of_year = sprintf(
+      "factor(month.abb[month(%s)], levels = month.abb)", v),
+    season = sprintf(
+      paste0("factor(%s[((month(%s) - %dL) %%%% 12L) %%/%% 3L + 1L], ",
+             "levels = %s)"),
+      gs_chr_vec(GS_SEASONS), v, cut$season_start, gs_chr_vec(GS_SEASONS)),
+    quarter_of_year = sprintf(
+      'factor(paste0("Q", quarter(%s)), levels = paste0("Q", 1:4))', v),
+    # data.table's wday() counts from Sunday, so the lookup is Sunday-first
+    # while the levels are Monday-first: the week is read out in the order it
+    # is worked, not in the order the function happens to number it.
+    day_of_week = sprintf(
+      paste0("factor(%s[wday(%s)], levels = %s)"),
+      gs_chr_vec(c("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")), v,
+      gs_chr_vec(c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"))),
+    # Zero-padded, so that the hours sort and read as a clock rather than
+    # putting 10 next to 1.
+    hour_of_day = sprintf(
+      'factor(sprintf("%%02d", hour(%s)), levels = sprintf("%%02d", 0:23))', v),
+    stop("Unknown time resolution: ", cut$unit, call. = FALSE)
+  )
+}
+
+#' A character vector as the `c("a", "b")` literal that builds it
+#' @keywords internal
+#' @noRd
+gs_chr_vec <- function(x) {
+  sprintf("c(%s)", paste(vapply(x, gs_dq, character(1L)), collapse = ", "))
 }
 
 #' The single `data.table` line that adds one derived column
@@ -248,6 +321,104 @@ GS_KM_RISK_HELPER <- c(
   ""
 )
 
+# The error-bar helpers. Emitted as text, like the Kaplan-Meier ones, so that
+# the printed script stands on its own: running it needs nothing that is not
+# already attached.
+#
+# Each returns the three columns stat_summary() draws a pointrange from -- the
+# point at `y`, the ends at `ymin` and `ymax` -- and each is handed one
+# stratum's values at a time.
+
+GS_ERR_CI_HELPER <- c(
+  "# A mean and its confidence interval. The t distribution rather than the",
+  "# normal one: the standard error is itself estimated from the same n",
+  "# observations, and t is what accounts for that. This is what",
+  "# Hmisc::smean.cl.normal computes, written out so that the script needs no",
+  "# package beyond the ones it already loads.",
+  "mean_ci <- function(x, conf = 0.95) {",
+  "  x <- x[!is.na(x)]",
+  "  n <- length(x)",
+  "  m <- if (n) mean(x) else NA_real_",
+  "  # One observation has no spread to estimate from, so it gets a point and",
+  "  # no interval rather than a NaN half-width.",
+  "  if (n < 2L) return(data.frame(y = m, ymin = NA_real_, ymax = NA_real_))",
+  "  half <- qt(1 - (1 - conf) / 2, n - 1L) * sd(x) / sqrt(n)",
+  "  data.frame(y = m, ymin = m - half, ymax = m + half)",
+  "}",
+  ""
+)
+
+GS_ERR_EXACT_HELPER <- c(
+  "# A proportion and its exact (Clopper-Pearson) interval. binom.test()",
+  "# inverts the binomial test itself, so the interval covers at least conf of",
+  "# the time at every n and every p. That is what a Wald interval on a",
+  "# proportion does not do: near 0 or 1 it runs outside the range a",
+  "# proportion can take, and when nobody had the outcome it has zero width",
+  "# and claims certainty.",
+  "prop_ci_exact <- function(x, conf = 0.95) {",
+  "  x <- as.numeric(x)",
+  "  x <- x[!is.na(x)]",
+  "  n <- length(x)",
+  "  if (!n) return(data.frame(y = NA_real_, ymin = NA_real_, ymax = NA_real_))",
+  "  ci <- binom.test(sum(x), n, conf.level = conf)$conf.int",
+  "  data.frame(y = mean(x), ymin = ci[1], ymax = ci[2])",
+  "}",
+  ""
+)
+
+GS_ERR_WILSON_HELPER <- c(
+  "# A proportion and its Wilson score interval: the values of p that the",
+  "# score test does not reject. It stays inside 0 and 1, and it keeps a real",
+  "# width when nobody or everybody had the outcome. Identical to",
+  "# prop.test(correct = FALSE)$conf.int.",
+  "prop_ci_wilson <- function(x, conf = 0.95) {",
+  "  x <- as.numeric(x)",
+  "  x <- x[!is.na(x)]",
+  "  n <- length(x)",
+  "  if (!n) return(data.frame(y = NA_real_, ymin = NA_real_, ymax = NA_real_))",
+  "  p <- mean(x)",
+  "  z <- qnorm(1 - (1 - conf) / 2)",
+  "  denom <- 1 + z^2 / n",
+  "  centre <- (p + z^2 / (2 * n)) / denom",
+  "  half <- z * sqrt(p * (1 - p) / n + z^2 / (4 * n^2)) / denom",
+  "  # Inside [0, 1] by construction; the clamp only keeps floating-point dust",
+  "  # from printing as -2.8e-17.",
+  "  data.frame(y = p, ymin = max(0, centre - half), ymax = min(1, centre + half))",
+  "}",
+  ""
+)
+
+#' The helper one error-bar setting needs defined, or `character(0)`
+#' @keywords internal
+#' @noRd
+gs_err_helper <- function(err_type) {
+  switch(err_type,
+         normal = GS_ERR_CI_HELPER,
+         exact  = GS_ERR_EXACT_HELPER,
+         wilson = GS_ERR_WILSON_HELPER,
+         character())
+}
+
+#' The stat_summary() layer a Dot + Error figure is drawn from
+#'
+#' `mean_se` is ggplot2's own, so the default setting emits exactly the line it
+#' always did and needs nothing defined above it.
+#' @keywords internal
+#' @noRd
+gs_code_dot_geom <- function(spec) {
+  if (identical(spec$err_type, "se")) {
+    return("stat_summary(fun.data = mean_se, geom = \"pointrange\")")
+  }
+  fun <- switch(spec$err_type,
+                normal = "mean_ci",
+                exact  = "prop_ci_exact",
+                wilson = "prop_ci_wilson",
+                stop("Unknown error bar: ", spec$err_type, call. = FALSE))
+  sprintf(paste0("stat_summary(fun.data = %s, fun.args = list(conf = %s), ",
+                 "geom = \"pointrange\")"),
+          fun, gs_n(spec$err_level))
+}
+
 #' The variables a Kaplan-Meier fit must be computed separately within
 #'
 #' Anything that splits the figure into curves or panels has to split the fit
@@ -265,6 +436,7 @@ gs_km_by <- function(spec, facet_strata = FALSE) {
 #' @noRd
 gs_code_preamble <- function(spec, facet_strata = FALSE) {
   c(if (gs_uses_facet_n(spec, facet_strata)) GS_FACET_N_HELPER,
+    if (identical(spec$plot_type, GS_DOT)) gs_err_helper(spec$err_type),
     if (identical(spec$plot_type, GS_KM)) GS_KM_HELPER,
     if (identical(spec$plot_type, GS_KM) && isTRUE(spec$km_risk)) {
       GS_KM_RISK_HELPER
@@ -449,7 +621,7 @@ gs_code_plot <- function(spec, data_sym = "d", facet_strata = FALSE,
     # drawn in a single unlabelled column.
     mapping <- c(mapping,
                  sprintf("x = %s", if (nzchar(spec$x)) gs_bt(spec$x) else "\"\""))
-    mapping <- c(mapping, sprintf("y = %s", gs_bt(spec$y)))
+    mapping <- c(mapping, sprintf("y = %s", gs_y_expr(spec)))
   }
   if (has_group) {
     mapping <- c(mapping, sprintf("%s = %s", grp_aes, gs_bt(spec$group)))
@@ -474,6 +646,12 @@ gs_code_plot <- function(spec, data_sym = "d", facet_strata = FALSE,
     lines <- c(lines, gs_indent(paste(
       "scale_x_continuous(limits = c(risk_min, risk_max),",
       "breaks = risk_times) +")))
+  } else {
+    # Mutually exclusive already -- shared_x is a Kaplan-Meier curve and the
+    # date axis is cleared for every type but the line plot -- but written as
+    # one choice so that two x scales can never both be emitted.
+    time_scale <- gs_code_time_scale(spec)
+    if (length(time_scale)) lines <- c(lines, gs_indent(time_scale))
   }
   coord <- gs_code_coord(spec, shared_x)
   if (length(coord)) lines <- c(lines, gs_indent(coord))
@@ -487,18 +665,46 @@ gs_code_plot <- function(spec, data_sym = "d", facet_strata = FALSE,
   if (length(labs)) lines <- c(lines, gs_indent(labs))
 
   # --- theme (always last, always present) ---
+  angle <- gs_code_tick_angle(spec)
+  # The blanking below has to come after the angle, not before: both set
+  # axis.text.x, and the last one wins.
+  trailing <- length(angle) > 0L || isTRUE(shared_x)
+  lines <- c(lines, gs_indent(paste0(spec$theme, if (trailing) " +" else "")))
+  if (length(angle)) {
+    lines <- c(lines, gs_indent(paste0(angle, if (isTRUE(shared_x)) " +" else "")))
+  }
   if (isTRUE(shared_x)) {
     # The table underneath carries the axis for both, so the curve drops it
     # rather than printing the same numbers twice, one row apart.
-    lines <- c(lines, gs_indent(paste0(spec$theme, " +")),
-               gs_indent(c(
-                 "theme(axis.title.x = element_blank(),",
-                 "      axis.text.x = element_blank(),",
-                 "      axis.ticks.x = element_blank())")))
-  } else {
-    lines <- c(lines, gs_indent(spec$theme))
+    lines <- c(lines, gs_indent(c(
+      "theme(axis.title.x = element_blank(),",
+      "      axis.text.x = element_blank(),",
+      "      axis.ticks.x = element_blank())")))
   }
   lines
+}
+
+#' What the Y aesthetic reads
+#'
+#' The column itself, except for a proportion, which is the count of one of two
+#' values rather than an average of them. That comparison is written into the
+#' figure rather than done to the data beforehand, so an outcome kept as a
+#' factor or as `TRUE`/`FALSE` -- which is how most people keep one -- is drawn
+#' without being recoded first, and the figure says which value it counted.
+#'
+#' The value is quoted whatever the column's type. R compares an integer, a
+#' logical, a factor and a character column against a string alike, so one
+#' expression covers every way an outcome is written, and `NA` stays `NA` in
+#' all of them.
+#' @keywords internal
+#' @noRd
+gs_y_expr <- function(spec) {
+  if (identical(spec$plot_type, GS_DOT) &&
+      spec$err_type %in% GS_ERR_PROP_TYPES && nzchar(spec$err_event %||% "")) {
+    return(sprintf("as.integer(%s == %s)", gs_bt(spec$y),
+                   gs_dq(spec$err_event)))
+  }
+  gs_bt(spec$y)
 }
 
 #' Geom layers for a plot type, each on its own line ending in " +"
@@ -533,7 +739,7 @@ gs_code_geoms <- function(spec) {
         if (!is.na(bw)) sprintf("binwidth = %s, ", gs_n(bw)) else "",
         sprintf("alpha = %s)", alpha)),
       "Scatter" = sprintf("geom_point(alpha = %s)", alpha),
-      "Dot + Error" = "stat_summary(fun.data = mean_se, geom = \"pointrange\")",
+      "Dot + Error" = gs_code_dot_geom(spec),
       stop("Unknown plot type: ", type, call. = FALSE)
     )
   }
@@ -637,7 +843,18 @@ gs_code_km_geoms <- function(spec, alpha) {
 gs_code_coord <- function(spec, shared_x = FALSE) {
   # With a number-at-risk table the two panels share one x scale, which is
   # already pinned to the range; see gs_code_risk_times().
-  xlim <- if (isTRUE(shared_x)) "" else gs_range_arg(spec$xlim_min, spec$xlim_max)
+  #
+  # A date axis takes neither. The X-axis boxes are numeric, a date typed into
+  # one reads as NA, and a number handed to a date scale is not ignored:
+  # ggplot2 stops with "transform_date() works with objects of class <Date>
+  # only" and no figure is drawn at all. Dropping the range is the difference
+  # between an axis that is not zoomed and a figure that does not appear.
+  numeric_x <- !nzchar(spec$x_time_class)
+  xlim <- if (isTRUE(shared_x) || !numeric_x) {
+    ""
+  } else {
+    gs_range_arg(spec$xlim_min, spec$xlim_max)
+  }
   ylim <- gs_range_arg(spec$ylim_min, spec$ylim_max)
   if (!nzchar(ylim) && identical(spec$plot_type, GS_KM) && isTRUE(spec$km_ylim)) {
     ylim <- "c(0, 1)"
@@ -646,6 +863,47 @@ gs_code_coord <- function(spec, shared_x = FALSE) {
              if (nzchar(ylim)) sprintf("ylim = %s", ylim))
   if (!length(parts)) return(character())
   sprintf("coord_cartesian(%s) +", paste(parts, collapse = ", "))
+}
+
+#' The date-axis scale, or `character(0)` when the axis is left to ggplot2
+#'
+#' Two separate questions, and either can be left unanswered. How far apart the
+#' ticks are is `date_breaks`; what each one reads is `date_labels`, a strftime
+#' format. Together they are what lets a column that really holds dates be
+#' drawn as a run of years: the values plotted are unchanged, only the ticks
+#' over them.
+#'
+#' `scale_x_datetime()` for a column carrying a time of day and
+#' `scale_x_date()` for one that does not -- the wrong one of the two does not
+#' relabel the axis, it refuses to draw it.
+#' @keywords internal
+#' @noRd
+gs_code_time_scale <- function(spec) {
+  if (!nzchar(spec$x_time_class)) return(character())
+  unit <- spec$x_time_unit
+  fmt <- spec$x_time_labels
+  if (!nzchar(unit) && !nzchar(fmt)) return(character())
+
+  parts <- character()
+  if (nzchar(unit)) {
+    every <- as.integer(spec$x_time_every)
+    if (is.na(every) || every < 1L) every <- 1L
+    base <- GS_X_TIME_BREAKS[[unit]]
+    # "3 months" already carries its own count, so a request for every second
+    # quarter is six months rather than "2 3 months".
+    breaks <- if (grepl("^[0-9]", base)) {
+      n <- as.integer(sub("^([0-9]+) .*$", "\\1", base))
+      sprintf("%d %s", n * every, sub("^[0-9]+ ", "", base))
+    } else {
+      sprintf("%d %s%s", every, base, if (every == 1L) "" else "s")
+    }
+    parts <- c(parts, sprintf("date_breaks = %s", gs_dq(breaks)))
+  }
+  if (nzchar(fmt)) parts <- c(parts, sprintf("date_labels = %s", gs_dq(fmt)))
+
+  fun <- if (identical(spec$x_time_class, "datetime")) "scale_x_datetime"
+         else "scale_x_date"
+  sprintf("%s(%s) +", fun, paste(parts, collapse = ", "))
 }
 
 #' One axis range as a `c(from, to)` literal, or `""` when both ends are blank
@@ -705,6 +963,37 @@ gs_code_facet <- function(spec, facet_strata = FALSE) {
   sprintf("facet_wrap(~ %s, labeller = label_both) +", gs_bt(col))
 }
 
+#' The theme() layer that turns the tick labels, or `character(0)`
+#'
+#' Emitted after the theme itself, because a theme replaces the whole element
+#' rather than merging into it: `theme_bw()` after this would put the labels
+#' back flat.
+#'
+#' The justification is not a setting. A label turned counter-clockwise has to
+#' be pulled back towards its tick or it hangs off the end of it, so `hjust`
+#' follows from the angle rather than being another thing to choose: right
+#' aligned against the axis, and centred on the tick once the text is standing
+#' upright.
+#' @keywords internal
+#' @noRd
+gs_code_tick_angle <- function(spec) {
+  parts <- character()
+  ax <- gs_tick_angle(spec$tick_angle_x)
+  ay <- gs_tick_angle(spec$tick_angle_y)
+  if (ax != 0) {
+    parts <- c(parts, sprintf(
+      "axis.text.x = element_text(angle = %s, hjust = 1, vjust = %s)",
+      gs_n(ax), if (ax == 90) "0.5" else "1"))
+  }
+  if (ay != 0) {
+    parts <- c(parts, sprintf(
+      "axis.text.y = element_text(angle = %s, hjust = %s, vjust = 0.5)",
+      gs_n(ay), if (ay == 90) "0.5" else "1"))
+  }
+  if (!length(parts)) return(character())
+  sprintf("theme(%s)", paste(parts, collapse = ", "))
+}
+
 #' The labs() layer, or character(0) when nothing is labelled
 #'
 #' Axis labels normally come from the column names, which is why nothing is
@@ -721,9 +1010,30 @@ gs_code_labs <- function(spec, grp_aes, has_group, title_expr = NULL,
   } else if (nzchar(spec$title)) {
     parts <- c(parts, sprintf("title = %s", gs_dq(spec$title)))
   }
-  lab_x <- if (nzchar(spec$lab_x)) spec$lab_x else if (type == GS_KM) "Time" else ""
-  lab_y <- if (nzchar(spec$lab_y)) spec$lab_y
-           else if (type == GS_KM) "Survival probability" else ""
+  # A date axis ticked by year is still an axis of dates, and "admit_date" is
+  # not what those ticks read. Naming the unit is what the user asked the axis
+  # for; a label typed by hand still wins.
+  lab_x <- if (nzchar(spec$lab_x)) {
+    spec$lab_x
+  } else if (nzchar(spec$x_time_unit %||% "")) {
+    GS_TIME_UNIT_LABEL[[spec$x_time_unit]]
+  } else if (type == GS_KM) {
+    "Time"
+  } else {
+    ""
+  }
+  # Left to itself the axis would read `as.integer(died == "1")`, which is
+  # what the figure does rather than what it shows.
+  lab_y <- if (nzchar(spec$lab_y)) {
+    spec$lab_y
+  } else if (identical(type, GS_DOT) && spec$err_type %in% GS_ERR_PROP_TYPES &&
+             nzchar(spec$err_event %||% "")) {
+    sprintf("Proportion %s = %s", spec$y, spec$err_event)
+  } else if (type == GS_KM) {
+    "Survival probability"
+  } else {
+    ""
+  }
   if (nzchar(lab_x)) parts <- c(parts, sprintf("x = %s", gs_dq(lab_x)))
   if (nzchar(lab_y)) parts <- c(parts, sprintf("y = %s", gs_dq(lab_y)))
   if (has_group && nzchar(spec$lab_legend)) {

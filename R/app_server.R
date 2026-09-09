@@ -57,16 +57,21 @@ gs_server <- function(dataset, data_name = "mydata") {
     # second reason to repopulate. Everything else keeps its selection through
     # keep_or(); only a choice the new pool no longer contains -- a factor
     # picked under "missing", after a switch back to quantiles -- falls back.
-    shiny::observeEvent(list(info(), input$cut_method), {
+    shiny::observeEvent(list(info(), input$cut_method, input$plot_type,
+                             input$err_type), {
       nfo <- info()
       method <- input$cut_method %||% "quantile"
-      choices <- gs_selector_choices(nfo, method)
+      type <- input$plot_type %||% "Boxplot"
+      choices <- gs_selector_choices(nfo, method, type)
       for (id in names(choices)) {
         shiny::updateSelectInput(session, id, choices = choices[[id]],
                                  selected = keep_or(id, choices[[id]]),
-                                 label = if (identical(id, "cut_var")) {
-                                   gs_cut_var_label(method)
-                                 })
+                                 label = switch(
+                                   id,
+                                   cut_var = gs_cut_var_label(method),
+                                   yvar = gs_yvar_label(type,
+                                                        input$err_type %||% "se"),
+                                   NULL))
       }
       shiny::updateCheckboxGroupInput(
         session, "strat_vars", choices = gs_stratify_choices(nfo),
@@ -74,21 +79,51 @@ gs_server <- function(dataset, data_name = "mydata") {
                              gs_vars_of(nfo, "stratify")))
     })
 
+    # A measurement and a 0/1 outcome take different error bars, and neither
+    # set applies to the other, so the list offered is the one that applies
+    # rather than the whole of it with half refused afterwards.
+    shiny::observeEvent(list(info(), input$yvar), {
+      choices <- gs_err_choices(info(), input$yvar %||% "")
+      cur <- input$err_type
+      selected <- if (!is.null(cur) && cur %in% choices) cur else choices[[1L]]
+      shiny::updateSelectInput(session, "err_type", choices = choices,
+                               selected = selected)
+
+      # Which of the two values counts. Offered rather than assumed: a factor
+      # declared c("Yes", "No") means the opposite of one declared the other
+      # way round, and only the person who made it knows which was meant.
+      vals <- gs_binary_values_of(dat(), input$yvar %||% "")
+      shiny::updateSelectInput(
+        session, "err_event", choices = vals,
+        selected = gs_err_event(dat(), input$yvar %||% "", input$err_event))
+    })
+
     # --- categorizing --------------------------------------------------------
 
+    # The last name this app wrote into the box. A pattern over the suffixes
+    # used to stand in for this and could not tell a name the app had just
+    # suggested from one the user typed that happened to end the same way --
+    # and `birth_year` or `fu_day` is a column an analyst really does have.
+    # Remembering the suggestion answers the question exactly.
+    suggested_name <- shiny::reactiveVal("")
+
     # A name that does not collide with the data, refreshed as the source
-    # variable changes but never overwriting something the user typed.
-    shiny::observeEvent(list(input$cut_var, input$cut_method, cuts_used()), {
+    # variable, the method or the resolution changes, but never overwriting
+    # something the user typed.
+    shiny::observeEvent(
+      list(input$cut_var, input$cut_method, input$cut_unit, cuts_used()), {
       dt <- dat()
       shiny::req(input$cut_var)
       # Nothing chosen yet: there is no name to suggest.
       if (identical(input$cut_var, GS_NONE)) return()
       method <- input$cut_method %||% "quantile"
-      suggested <- gs_cut_name(input$cut_var, names(dt), method)
+      suggestion <- gs_cut_name(input$cut_var, names(dt), method,
+                                input$cut_unit %||% "month")
       current <- input$cut_name %||% ""
       if (!nzchar(current) || current %in% names(dt) ||
-          grepl(gs_suggested_name_pattern(), current)) {
-        shiny::updateTextInput(session, "cut_name", value = suggested)
+          identical(current, suggested_name())) {
+        suggested_name(suggestion)
+        shiny::updateTextInput(session, "cut_name", value = suggestion)
       }
     })
 
@@ -97,11 +132,12 @@ gs_server <- function(dataset, data_name = "mydata") {
       shiny::req(input$cut_var)
       if (identical(input$cut_var, GS_NONE)) {
         shiny::showNotification(
-          if (identical(input$cut_method, "missing")) {
-            "Choose the variable whose missing values you want to group by."
-          } else {
+          switch(
+            input$cut_method %||% "quantile",
+            missing = "Choose the variable whose missing values you want to group by.",
+            period = "Choose the date or time variable to read at a resolution.",
             "Choose the continuous variable to categorize."
-          },
+          ),
           type = "warning")
         return()
       }
@@ -116,7 +152,9 @@ gs_server <- function(dataset, data_name = "mydata") {
 
       cut <- gs_cut(var = input$cut_var, new = trimws(input$cut_name %||% ""),
                     method = input$cut_method %||% "quantile",
-                    n = input$cut_n, breaks = breaks)
+                    n = input$cut_n, breaks = breaks,
+                    unit = input$cut_unit %||% "month",
+                    season_start = input$cut_season_start %||% GS_SEASON_START)
       probs <- gs_check_cut(dt, cut)
       if (length(probs)) {
         shiny::showNotification(paste(probs, collapse = " "), type = "error",
@@ -155,7 +193,13 @@ gs_server <- function(dataset, data_name = "mydata") {
 
     spec_r <- shiny::debounce(
       shiny::reactive({
-        spec <- gs_spec_from_input(input)
+        # Whether the X column is a date, a date-time or neither decides which
+        # scale can be emitted, and whether the numeric axis range can be used
+        # at all. Read from the data and handed in, because gs_spec() clears
+        # the settings that do not apply as it builds.
+        spec <- gs_spec_from_input(
+          input, gs_x_time_class(dat(), input$xvar %||% ""),
+          gs_err_event(dat(), input$yvar %||% "", input$err_event))
         # The categorization rules are held outside the inputs, because they
         # accumulate rather than being read off a control.
         spec$cuts <- cuts_used()

@@ -89,7 +89,11 @@ gs_test_inputs <- function(outdir) {
     sample_big = TRUE, show_n = TRUE,
     timevar = "", eventvar = "", km_ci = FALSE, km_censor = TRUE,
     km_ylim = TRUE, km_risk = FALSE, cut_var = "Sepal.Length",
-    cut_method = "quantile", cut_n = 4, cut_points = "", cut_name = ""
+    cut_method = "quantile", cut_n = 4, cut_points = "", cut_name = "",
+    cut_unit = "month", cut_season_start = "3",
+    x_time_unit = "", x_time_every = 1, x_time_labels = "",
+    err_type = "se", err_level = 0.95, err_event = "",
+    tick_angle_x = "0", tick_angle_y = "0"
   )
 }
 
@@ -695,7 +699,9 @@ test_that("the UI builds and carries every control the server reads", {
                "facet", "strat_vars", "strat_mode", "min_n", "show_n",
                "export", "format", "outdir", "preview_mode", "strata_table",
                "layer_summary", "xlim_min", "xlim_max", "ylim_min",
-               "ylim_max")) {
+               "ylim_max", "cut_unit", "cut_season_start", "x_time_unit",
+               "x_time_every", "x_time_labels", "err_type", "err_level",
+               "tick_angle_x", "tick_angle_y", "err_event")) {
     expect_true(grepl(id, ui, fixed = TRUE), info = id)
   }
 })
@@ -843,5 +849,308 @@ test_that("a variable with nothing missing is refused with a reason", {
 
     expect_length(cuts_used(), 0L)
     expect_false("age_missing" %in% names(dat()))
+  })
+})
+
+# --- reading a date at a resolution, through the app --------------------------
+
+test_that("a date can be read by month and described within it", {
+  # The whole of the feature, end to end: a column of dates that cannot be a
+  # layer becomes one, the months come out January to December, and the code
+  # on screen is code that runs.
+  outdir <- file.path(tempdir(), "gs-test-period")
+  unlink(outdir, recursive = TRUE)
+
+  shiny::testServer(gs_server(epi_cohort, "epi_cohort"), {
+    do.call(session$setInputs, gs_test_inputs(outdir))
+    session$setInputs(cut_method = "period", cut_var = "admit_date",
+                      cut_unit = "month_of_year", cut_name = "admit_month")
+    session$elapse(500)
+
+    # Before the rule is added there is nothing to stratify by but the date's
+    # own hundreds of values, which is to say nothing.
+    expect_false("admit_date" %in% gs_vars_of(info(), "stratify"))
+
+    session$setInputs(add_cut = 1)
+    session$elapse(500)
+
+    expect_true("admit_month" %in% names(dat()))
+    expect_equal(levels(dat()$admit_month), month.abb)
+    expect_true("admit_month" %in% gs_vars_of(info(), "stratify"))
+
+    # Describe length of stay by month, the way the seasonal figure is drawn.
+    # los_days rather than crp so that the figure is not also a demonstration
+    # of ggplot2 dropping the 122 rows with no CRP.
+    session$setInputs(plot_type = "Boxplot", yvar = "los_days",
+                      xvar = "admit_month", strat_vars = character(),
+                      data_name = "epi_cohort")
+    session$elapse(500)
+
+    expect_length(problems(), 0L)
+    expect_no_error(output$plot)
+
+    # The printed script says how the column was made, in the idiom it would
+    # have been written in by hand.
+    expect_match(output$code,
+                 "factor(month.abb[month(admit_date)], levels = month.abb)",
+                 fixed = TRUE)
+  })
+})
+
+test_that("a season can be started at a month of the user's choosing", {
+  shiny::testServer(gs_server(epi_cohort, "epi_cohort"), {
+    do.call(session$setInputs, gs_test_inputs(tempdir()))
+    session$setInputs(cut_method = "period", cut_var = "admit_date",
+                      cut_unit = "season", cut_season_start = "9",
+                      cut_name = "admit_season", add_cut = 1)
+    session$elapse(500)
+
+    col <- dat()$admit_season
+    expect_equal(levels(col), GS_SEASONS)
+    # September starts spring, which is what choosing the month is for; the
+    # order of the four names does not move with it.
+    september <- col[data.table::month(dat()$admit_date) == 9L]
+    expect_equal(unique(as.character(september)), "Spring")
+  })
+})
+
+test_that("a time resolution the column cannot answer is refused with a reason", {
+  shiny::testServer(gs_server(epi_cohort, "epi_cohort"), {
+    do.call(session$setInputs, gs_test_inputs(tempdir()))
+    # An hour of the day off a plain date would be midnight for every row.
+    session$setInputs(cut_method = "period", cut_var = "admit_date",
+                      cut_unit = "hour_of_day", cut_name = "admit_hour",
+                      add_cut = 1)
+    session$elapse(500)
+    expect_false("admit_hour" %in% names(dat()))
+    expect_length(cuts(), 0L)
+  })
+})
+
+test_that("the name box follows the resolution but never a name that was typed", {
+  shiny::testServer(gs_server(epi_cohort, "epi_cohort"), {
+    do.call(session$setInputs, gs_test_inputs(tempdir()))
+    session$setInputs(cut_method = "period", cut_var = "admit_date",
+                      cut_unit = "year")
+    session$elapse(500)
+    # testServer does not feed updateTextInput() back into input$, so the
+    # suggestion is read where the server keeps it.
+    expect_equal(suggested_name(), "admit_date_year")
+
+    session$setInputs(cut_unit = "season")
+    session$elapse(500)
+    expect_equal(suggested_name(), "admit_date_season")
+
+    # A name the user typed is left alone, even one that looks like a name the
+    # app might have suggested. `birth_year` is a column an analyst has.
+    session$setInputs(cut_name = "birth_year", cut_unit = "month_of_year")
+    session$elapse(500)
+    expect_equal(suggested_name(), "admit_date_season")
+  })
+})
+
+test_that("a line plot draws a date axis ticked and titled by its unit", {
+  # epi_cohort has one row per patient, so this is a line through the cohort
+  # rather than one per subject; what is being checked is the axis.
+  shiny::testServer(gs_server(epi_cohort, "epi_cohort"), {
+    do.call(session$setInputs, gs_test_inputs(tempdir()))
+    session$setInputs(plot_type = "Line", yvar = "los_days",
+                      xvar = "admit_date",
+                      strat_vars = character(), x_time_unit = "year",
+                      x_time_labels = "%Y", data_name = "epi_cohort")
+    session$elapse(500)
+
+    expect_equal(spec_r()$x_time_class, "date")
+    expect_length(problems(), 0L)
+    expect_match(output$code,
+                 'scale_x_date(date_breaks = "1 year", date_labels = "%Y")',
+                 fixed = TRUE)
+    # The column drawn is a date; the axis is told to say what the ticks mean.
+    expect_match(output$code, 'labs(x = "Year")', fixed = TRUE)
+    expect_no_error(output$plot)
+  })
+})
+
+test_that("a numeric axis range typed against a date axis does not break the figure", {
+  # The X boxes are numeric and a date cannot be typed into one. Handing the
+  # number through would stop ggplot2 outright rather than zoom anything.
+  shiny::testServer(gs_server(epi_cohort, "epi_cohort"), {
+    do.call(session$setInputs, gs_test_inputs(tempdir()))
+    session$setInputs(plot_type = "Line", yvar = "los_days",
+                      xvar = "admit_date",
+                      strat_vars = character(), xlim_min = 10, xlim_max = 100,
+                      data_name = "epi_cohort")
+    session$elapse(500)
+
+    expect_false(grepl("coord_cartesian(xlim", output$code, fixed = TRUE))
+    expect_no_error(output$plot)
+  })
+})
+
+# --- what the error bar stands for --------------------------------------------
+
+test_that("a Dot + Error bar can be a confidence interval instead of a standard error", {
+  shiny::testServer(gs_server(epi_cohort, "epi_cohort"), {
+    do.call(session$setInputs, gs_test_inputs(tempdir()))
+    session$setInputs(plot_type = "Dot + Error", yvar = "los_days",
+                      xvar = "severity", strat_vars = character(),
+                      jitter = FALSE, data_name = "epi_cohort")
+    session$elapse(500)
+
+    # The default is what it has always been, and needs nothing defined.
+    expect_length(problems(), 0L)
+    expect_match(output$code, "stat_summary(fun.data = mean_se", fixed = TRUE)
+    expect_false(grepl("mean_ci <- function", output$code, fixed = TRUE))
+
+    session$setInputs(err_type = "normal", err_level = 0.99)
+    session$elapse(500)
+
+    expect_length(problems(), 0L)
+    # The interval, the level it was asked for, and the function that computes
+    # it, printed above the figure that uses it.
+    expect_match(output$code, "mean_ci <- function(x, conf = 0.95)", fixed = TRUE)
+    expect_match(output$code,
+                 "stat_summary(fun.data = mean_ci, fun.args = list(conf = 0.99)",
+                 fixed = TRUE)
+    expect_no_error(output$plot)
+  })
+})
+
+test_that("a proportion is described by a proportion interval, not by a mean", {
+  # `death` is 0/1, so it is not a measurement -- which is exactly what the
+  # proportion intervals are for.
+  shiny::testServer(gs_server(epi_cohort, "epi_cohort"), {
+    do.call(session$setInputs, gs_test_inputs(tempdir()))
+    session$setInputs(plot_type = "Dot + Error", yvar = "death",
+                      xvar = "severity", strat_vars = character(),
+                      jitter = FALSE, data_name = "epi_cohort")
+    session$elapse(500)
+
+    # A mean and a standard error is refused, and says what to do instead.
+    expect_match(problems(), "proportion intervals", all = FALSE)
+
+    for (type in GS_ERR_PROP_TYPES) {
+      session$setInputs(err_type = type)
+      session$elapse(500)
+      expect_length(problems(), 0L)
+      expect_no_error(output$plot)
+    }
+
+    expect_match(output$code, "prop_ci_wilson <- function", fixed = TRUE)
+    # And the figure really is bounded, which is the point of choosing one.
+    env <- new.env(parent = asNamespace("ggstratify"))
+    assign("epi_cohort", epi_cohort, envir = env)
+    p <- eval(parse(text = output$code), envir = env)
+    bars <- ggplot2::ggplot_build(p)$data[[1L]]
+    expect_true(all(bars$ymin >= 0 & bars$ymax <= 1))
+  })
+})
+
+test_that("a 0/1 outcome is offered as a Y variable, but only where it can be drawn", {
+  # `death` is 0 and 1, so it is not continuous -- which used to keep it out of
+  # the Y list altogether, including on the one figure that can describe it.
+  shiny::testServer(gs_server(epi_cohort, "epi_cohort"), {
+    do.call(session$setInputs, gs_test_inputs(tempdir()))
+    session$setInputs(plot_type = "Boxplot")
+    session$elapse(500)
+    expect_false("death" %in%
+                   gs_selector_choices(info(), "quantile", "Boxplot")$yvar)
+
+    session$setInputs(plot_type = "Dot + Error")
+    session$elapse(500)
+    expect_true("death" %in%
+                  gs_selector_choices(info(), "quantile", "Dot + Error")$yvar)
+    expect_true("los_days" %in%
+                  gs_selector_choices(info(), "quantile", "Dot + Error")$yvar)
+  })
+})
+
+test_that("the error bars offered are the ones the Y variable can carry", {
+  shiny::testServer(gs_server(epi_cohort, "epi_cohort"), {
+    do.call(session$setInputs, gs_test_inputs(tempdir()))
+    session$setInputs(plot_type = "Dot + Error", yvar = "los_days",
+                      xvar = "severity", strat_vars = character(),
+                      jitter = FALSE)
+    session$elapse(500)
+    # A measurement has a mean and a spread; the proportion intervals are not
+    # offered at all rather than offered and then refused.
+    expect_setequal(gs_err_choices(info(), "los_days"),
+                    c("se", "normal"))
+
+    session$setInputs(yvar = "death")
+    session$elapse(500)
+    expect_setequal(gs_err_choices(info(), "death"), GS_ERR_PROP_TYPES)
+  })
+})
+
+test_that("the tick labels can be turned, and the turn survives the theme", {
+  shiny::testServer(gs_server(epi_cohort, "epi_cohort"), {
+    do.call(session$setInputs, gs_test_inputs(tempdir()))
+    session$setInputs(plot_type = "Boxplot", yvar = "los_days",
+                      xvar = "severity", strat_vars = character(),
+                      jitter = FALSE, data_name = "epi_cohort")
+    session$elapse(500)
+    expect_false(grepl("axis.text.x", output$code, fixed = TRUE))
+
+    session$setInputs(tick_angle_x = "45")
+    session$elapse(500)
+    expect_match(output$code, "angle = 45", fixed = TRUE)
+    # After the theme, not before it: a theme replaces the element rather than
+    # merging into it, so the order is what makes the setting stick.
+    expect_lt(regexpr("theme_bw()", output$code, fixed = TRUE),
+              regexpr("axis.text.x", output$code, fixed = TRUE))
+    expect_no_error(output$plot)
+  })
+})
+
+test_that("an outcome kept as a factor is described without being recoded first", {
+  # Most people keep a binary outcome as a factor or as TRUE/FALSE. The figure
+  # counts the value in the aes() rather than asking for the data to be changed.
+  cohort <- data.table::as.data.table(epi_cohort)
+  cohort[, outcome := factor(ifelse(death == 1L, "Died", "Survived"),
+                             levels = c("Survived", "Died"))]
+
+  shiny::testServer(gs_server(cohort, "cohort"), {
+    do.call(session$setInputs, gs_test_inputs(tempdir()))
+    session$setInputs(plot_type = "Dot + Error", yvar = "outcome",
+                      xvar = "severity", strat_vars = character(),
+                      jitter = FALSE, data_name = "cohort")
+    session$elapse(500)
+
+    # It is offered as a Y variable, and only the proportion bars are offered
+    # for it.
+    expect_true("outcome" %in%
+                  gs_selector_choices(info(), "quantile", "Dot + Error")$yvar)
+    expect_setequal(gs_err_choices(info(), "outcome"), GS_ERR_PROP_TYPES)
+
+    session$setInputs(err_type = "wilson")
+    session$elapse(500)
+
+    expect_length(problems(), 0L)
+    # The second level is counted, and the code and the axis both say so.
+    expect_equal(spec_r()$err_event, "Died")
+    expect_match(output$code, 'y = as.integer(outcome == "Died")', fixed = TRUE)
+    expect_match(output$code, 'labs(y = "Proportion outcome = Died")',
+                 fixed = TRUE)
+    expect_no_error(output$plot)
+
+    # And the figure agrees with the same outcome written as 0 and 1.
+    env <- new.env(parent = asNamespace("ggstratify"))
+    assign("cohort", cohort, envir = env)
+    bars <- ggplot2::ggplot_build(
+      eval(parse(text = output$code), envir = env))$data[[1L]]
+    ref <- vapply(split(cohort$death, cohort$severity), function(x)
+      suppressWarnings(stats::prop.test(sum(x), length(x),
+                                        correct = FALSE)$conf.int),
+      numeric(2L))
+    expect_equal(bars$y, unname(vapply(split(cohort$death, cohort$severity),
+                                       mean, numeric(1L))))
+    expect_equal(bars$ymin, unname(ref[1L, ]), tolerance = 1e-8)
+
+    # Counting the other level is one control away.
+    session$setInputs(err_event = "Survived")
+    session$elapse(500)
+    expect_equal(spec_r()$err_event, "Survived")
+    expect_match(output$code, 'outcome == "Survived"', fixed = TRUE)
   })
 })

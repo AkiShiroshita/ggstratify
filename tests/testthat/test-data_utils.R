@@ -418,7 +418,7 @@ test_that("a list-column is refused at the door, not inside the app", {
 })
 
 test_that("the shipped example data is what its documentation says it is", {
-  expect_equal(dim(epi_cohort), c(600L, 11L))
+  expect_equal(dim(epi_cohort), c(600L, 12L))
   # The n = 0 stratum only works if Site D survives as a declared level.
   expect_true("Site D" %in% levels(epi_cohort$site))
   expect_equal(sum(epi_cohort$site == "Site D"), 0L)
@@ -429,4 +429,105 @@ test_that("the shipped example data is what its documentation says it is", {
   # Follow-up is bounded by the one-year study end, and death is 0/1.
   expect_true(all(epi_cohort$fu_days >= 1 & epi_cohort$fu_days <= 365))
   expect_setequal(unique(epi_cohort$death), c(0L, 1L))
+
+  # The admission date is there to be read at a resolution, which only means
+  # anything if it is a date, spans more than one year, and has too many
+  # distinct values to be stratified on as it stands.
+  expect_s3_class(epi_cohort$admit_date, "Date")
+  expect_false(anyNA(epi_cohort$admit_date))
+  expect_true(all(epi_cohort$admit_date >= as.Date("2021-01-01") &
+                    epi_cohort$admit_date <= as.Date("2023-12-31")))
+  expect_gt(data.table::uniqueN(epi_cohort$admit_date), 50L)
+  info <- gs_classify_vars(gs_prepare_data(epi_cohort))
+  expect_false(info[var == "admit_date", can_stratify])
+  # And the seasonal difference the column exists to demonstrate is really
+  # there: the winter quarter is more inflamed than the summer one.
+  season <- gs_apply_cuts(gs_prepare_data(epi_cohort),
+                          list(gs_cut("admit_date", method = "period",
+                                      unit = "season")))
+  by_season <- season[, mean(crp, na.rm = TRUE), by = admit_date_season]
+  crp_of <- function(s) by_season[admit_date_season == s, V1]
+  expect_gt(crp_of("Winter"), crp_of("Summer") + 2)
+})
+
+# --- dates and times ----------------------------------------------------------
+
+timed <- function() {
+  days <- as.Date("2021-03-01") + seq(0, 300, by = 3)
+  data.table::data.table(
+    d = days,
+    id = data.table::as.IDate(days),
+    ts = as.POSIXct(paste(days, "09:30:00"), tz = "UTC"),
+    # Built from the timestamps rather than by adding to an ITime: arithmetic
+    # on one gives back a bare integer, which is the very confusion this
+    # fixture is here to test.
+    tod = data.table::as.ITime(as.POSIXct(paste(days, "09:30:00"), tz = "UTC") +
+                                 seq_along(days) * 37L),
+    elapsed = as.difftime(as.numeric(seq_along(days)), units = "days"),
+    y = as.numeric(seq_along(days))
+  )
+}
+
+test_that("a time of day is not offered as a measurement or as a follow-up time", {
+  # An ITime is a count of seconds past midnight, so is.numeric() says TRUE of
+  # one. Left at that, a clock reading would be offered as something to plot on
+  # an axis and as a Kaplan-Meier follow-up time.
+  info <- gs_classify_vars(timed())
+  expect_false(info[var == "tod", is_continuous])
+  expect_false(info[var == "tod", is_numeric])
+  expect_false(info[var == "tod", is_event])
+  expect_true(info[var == "tod", is_temporal])
+  expect_false("tod" %in% gs_vars_of(info, "continuous"))
+  expect_false("tod" %in% gs_vars_of(info, "numeric"))
+})
+
+test_that("every way of writing a moment in time is recognised as one", {
+  info <- gs_classify_vars(timed())
+  expect_setequal(gs_vars_of(info, "temporal"), c("d", "id", "ts", "tod"))
+  # An elapsed length is not a moment: there is no month or season to ask it
+  # for. It was never mistaken for a measurement either, so nothing changes.
+  expect_false(info[var == "elapsed", is_temporal])
+  expect_false(info[var == "y", is_temporal])
+})
+
+test_that("only a date or a time is offered for a time resolution", {
+  info <- gs_classify_vars(timed())
+  expect_setequal(gs_selector_choices(info, "period")$cut_var,
+                  c(GS_NONE, "d", "id", "ts", "tod"))
+  # The other methods keep the pools they had.
+  expect_false("d" %in% gs_selector_choices(info, "quantile")$cut_var)
+  expect_true("d" %in% gs_selector_choices(info, "missing")$cut_var)
+})
+
+test_that("gs_x_time_class reads what the X column actually holds", {
+  dt <- timed()
+  expect_equal(gs_x_time_class(dt, "d"), "date")
+  expect_equal(gs_x_time_class(dt, "id"), "date")
+  expect_equal(gs_x_time_class(dt, "ts"), "datetime")
+  # A clock reading is a time, but not one ggplot2 draws with a date scale.
+  expect_equal(gs_x_time_class(dt, "tod"), "")
+  expect_equal(gs_x_time_class(dt, "y"), "")
+  # Nothing chosen, and a column that has since been removed.
+  expect_equal(gs_x_time_class(dt, ""), "")
+  expect_equal(gs_x_time_class(dt, "gone"), "")
+})
+
+test_that("a date read at a resolution becomes something to stratify on", {
+  # The point of the method, stated as the classification changes it makes: a
+  # column with hundreds of distinct dates cannot be a layer, and the same
+  # column read by season can.
+  dt <- gs_prepare_data(epi_cohort)
+  before <- gs_classify_vars(dt)
+  expect_false(before[var == "admit_date", can_stratify])
+
+  after <- gs_classify_vars(gs_apply_cuts(dt, list(
+    gs_cut("admit_date", method = "period", unit = "season"))))
+  expect_true(after[var == "admit_date_season", can_stratify])
+  expect_true("admit_date_season" %in% gs_vars_of(after, "stratify"))
+
+  # And the strata come out in season order, not in the order they appear.
+  st <- gs_strata_table(gs_apply_cuts(dt, list(
+    gs_cut("admit_date", method = "period", unit = "season"))),
+    "admit_date_season", min_n = 0L)
+  expect_equal(st$level, GS_SEASONS)
 })

@@ -98,14 +98,28 @@ ggstratify(iris)                 # data.frame / tibble / data.table / matrix
 
 ## Derived variables
 
-**Derive a variable** makes a new categorical variable out of one you already
-have, which can then be used as a layer like any other. A continuous variable
-becomes quantile groups, equal-width bins or your own cut points. A variable
-of any type becomes **missing vs observed**: the rows where it has a value
-and the rows where it does not.
+**Derive a variable** makes a new variable out of one you already have, which
+can then be used as a layer like any other. A continuous variable becomes
+quantile groups, equal-width bins or your own cut points. A variable of any
+type becomes **missing vs observed**: the rows where it has a value and the
+rows where it does not.
 
-`crp` in the bundled `epi_cohort` is incomplete on purpose, so
-`ggstratify(epi_cohort)` is enough to try it.
+A date or date-time variable gets a **time resolution**. Either a calendar
+period -- the year, quarter, month, week, day, hour or minute it falls in,
+which keeps it a date and so keeps a trend spaced by elapsed time -- or a
+position in the cycle, which drops the year and pools every March since the
+data began: month of the year, season, quarter of the year, day of the week,
+hour of the day. Months run January to December and days Monday to Sunday,
+never alphabetically; the season's start month is yours to choose, so March
+gives the northern hemisphere and September the southern.
+
+For a `Line` plot drawn against a date, the **Appearance** panel sets how far
+apart the ticks are and what each one reads, so a column of dates can be shown
+and labelled as years.
+
+`crp` in the bundled `epi_cohort` is incomplete on purpose and `admit_date`
+spans three calendar years, so `ggstratify(epi_cohort)` is enough to try
+both.
 
 ## Acknowledgements
 

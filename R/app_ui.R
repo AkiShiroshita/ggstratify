@@ -31,7 +31,7 @@ gs_ui <- function() {
                              selected = "Boxplot"),
           shiny::conditionalPanel(
             condition = gs_js_not_km(),
-            shiny::selectInput("yvar", "Y-variable (continuous)", choices = NULL)
+            shiny::selectInput("yvar", "Y-variable", choices = NULL)
           ),
           shiny::conditionalPanel(
             condition = sprintf("!%s.includes(input.plot_type) && %s",
@@ -104,6 +104,21 @@ gs_ui <- function() {
               "Cut points are boundaries: 65 gives (-Inf, 65] and (65, Inf]."
             )
           ),
+          shiny::conditionalPanel(
+            condition = "input.cut_method == 'period'",
+            shiny::selectInput("cut_unit", "Time resolution",
+                               choices = GS_TIME_UNITS, selected = "month"),
+            shiny::conditionalPanel(
+              condition = "input.cut_unit == 'season'",
+              shiny::selectInput(
+                "cut_season_start", "Spring starts in",
+                choices = stats::setNames(as.character(1:12), month.name),
+                selected = as.character(GS_SEASON_START)),
+              shiny::helpText(
+                "The four seasons follow this month three at a time."
+              )
+            )
+          ),
           shiny::textInput("cut_name", "New variable name"),
           shiny::actionButton("add_cut", "Add the variable",
                               class = "btn-secondary w-100",
@@ -154,6 +169,23 @@ gs_ui <- function() {
 
         bslib::accordion_panel(
           "Plot options",
+          shiny::conditionalPanel(
+            condition = gs_js_type(GS_DOT),
+            shiny::selectInput("err_type", "The bar shows",
+                               choices = GS_ERR_TYPES, selected = "se"),
+            shiny::conditionalPanel(
+              condition = sprintf("%s.includes(input.err_type)",
+                                  gs_js_array(GS_ERR_CI_TYPES)),
+              shiny::selectInput("err_level", "Confidence level",
+                                 choices = GS_ERR_LEVELS, selected = 0.95)
+            ),
+            shiny::conditionalPanel(
+              condition = sprintf("%s.includes(input.err_type)",
+                                  gs_js_array(GS_ERR_PROP_TYPES)),
+              shiny::selectInput("err_event", "Count as the outcome",
+                                 choices = NULL)
+            ),
+          ),
           shiny::conditionalPanel(
             condition = "['Boxplot','Violin','Dot + Error'].includes(input.plot_type)",
             shiny::checkboxInput("jitter", "Add jittered points", FALSE)
@@ -231,6 +263,21 @@ gs_ui <- function() {
           shiny::textInput("lab_x", "X-axis label"),
           shiny::textInput("lab_y", "Y-axis label"),
           shiny::textInput("lab_legend", "Legend label"),
+          shiny::conditionalPanel(
+            condition = gs_js_type(GS_LINE),
+            shiny::fluidRow(
+              shiny::column(6, shiny::selectInput(
+                "x_time_unit", "X axis ticks every",
+                choices = c("Automatic" = "", GS_X_TIME_TICKS))),
+              shiny::column(6, shiny::numericInput(
+                "x_time_every", "n", value = 1, min = 1, step = 1))
+            ),
+            shiny::selectInput("x_time_labels", "X axis tick text",
+                               choices = GS_TIME_LABELS),
+            shiny::helpText(
+              "These apply when the X variable is a date or a date-time."
+            )
+          ),
           shiny::fluidRow(
             shiny::column(6, shiny::numericInput("xlim_min", "X axis from",
                                                  value = NA)),
@@ -244,11 +291,15 @@ gs_ui <- function() {
                                                  value = NA))
           ),
           shiny::helpText(
-            "Blank is automatic, and either end can be left blank on its own.",
             "The figure is zoomed into the range rather than filtered to it,",
             "so a boxplot's median and a density's shape stay the ones the",
-            "whole data gives. A range typed here replaces a Kaplan-Meier",
-            "curve's 'Y axis from 0 to 1'."
+            "whole data gives."
+          ),
+          shiny::fluidRow(
+            shiny::column(6, shiny::selectInput(
+              "tick_angle_x", "X tick angle", choices = GS_TICK_ANGLES)),
+            shiny::column(6, shiny::selectInput(
+              "tick_angle_y", "Y tick angle", choices = GS_TICK_ANGLES))
           )
         ),
 
@@ -367,8 +418,27 @@ gs_ui <- function() {
 #' and dates would be describing the wrong list.
 #' @keywords internal
 #' @noRd
+#' The label the Y selector carries under a given plot type and error bar
+#'
+#' A Dot + Error figure showing a proportion is asking for an outcome that
+#' happened or did not, not for a measurement, and the pool it offers changes
+#' to match -- so a label that still read "continuous" would be describing the
+#' wrong list.
+#' @keywords internal
+#' @noRd
+gs_yvar_label <- function(plot_type, err_type = "se") {
+  if (identical(plot_type, GS_DOT) && err_type %in% GS_ERR_PROP_TYPES) {
+    return("Y-variable (0/1 outcome)")
+  }
+  if (identical(plot_type, GS_DOT)) return("Y-variable (continuous or 0/1)")
+  "Y-variable (continuous)"
+}
+
 gs_cut_var_label <- function(method) {
-  if (identical(method, "missing")) "Variable" else "Continuous variable"
+  switch(method,
+         missing = "Variable",
+         period = "Date or time variable",
+         "Continuous variable")
 }
 
 #' The warning shown when a variable is split by its own missingness

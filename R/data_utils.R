@@ -101,7 +101,7 @@ gs_classify_vars <- function(dt, max_levels = 50L, max_coded_levels = 9L) {
       var = character(), class = character(), n_levels = integer(),
       n_missing = integer(), is_continuous = logical(),
       is_categorical = logical(), is_numeric = logical(), is_event = logical(),
-      can_stratify = logical()
+      is_binary = logical(), is_temporal = logical(), can_stratify = logical()
     ))
   }
 
@@ -109,7 +109,7 @@ gs_classify_vars <- function(dt, max_levels = 50L, max_coded_levels = 9L) {
     col <- dt[[v]]
     cls <- class(col)[1L]
     nlev <- data.table::uniqueN(col, na.rm = TRUE)
-    numericish <- is.numeric(col) && !inherits(col, c("Date", "POSIXct"))
+    numericish <- is.numeric(col) && !gs_is_temporal_col(col)
     list(
       var = v,
       class = cls,
@@ -120,7 +120,13 @@ gs_classify_vars <- function(dt, max_levels = 50L, max_coded_levels = 9L) {
       # Both are for the Kaplan-Meier selectors: survival::Surv() needs a
       # numeric time and a two-valued event indicator.
       is_numeric = numericish,
-      is_event = gs_is_event_col(col)
+      is_event = gs_is_event_col(col),
+      # For the proportion intervals, which count an outcome rather than
+      # averaging a measurement.
+      is_binary = gs_is_binary_col(col),
+      # For the time-resolution method, which is the one thing a date can be
+      # asked and a number cannot.
+      is_temporal = gs_is_temporal_col(col)
     )
   }))
 
@@ -129,6 +135,119 @@ gs_classify_vars <- function(dt, max_levels = 50L, max_coded_levels = 9L) {
   info[, can_stratify := is_categorical & n_levels >= 2L & n_levels <= max_levels]
   info[]
 }
+
+#' The two values an outcome can take, in the order they are offered
+#'
+#' A binary outcome is written in R in several ways and all of them are
+#' reasonable: 0 and 1, `TRUE` and `FALSE`, a two-level factor, a character
+#' column with two values. This is the one place that says what those two
+#' values are, so that everything downstream can ask rather than guess.
+#'
+#' A factor is read from `levels()` rather than from the values present, so a
+#' declared level that nobody had is still one of the two: a stratum where the
+#' outcome never happened is a proportion of 0, which is exactly the case a
+#' proportion interval is most worth having.
+#'
+#' The second value is the one counted by default, which is R's own convention
+#' -- the reference level first, the level being modelled second, as `glm()`
+#' reads a factor. It is a default rather than a rule: which value counts is a
+#' control in the sidebar, because a factor declared `c("Yes", "No")` means the
+#' opposite of one declared `c("No", "Yes")` and nothing in the data says which
+#' was intended.
+#'
+#' @return The two values as character, or `character(0)` when the column is
+#'   not an outcome of this kind.
+#' @keywords internal
+#' @noRd
+gs_binary_values <- function(col) {
+  if (gs_is_temporal_col(col)) return(character())
+  if (is.logical(col)) return(c("FALSE", "TRUE"))
+  if (is.factor(col)) {
+    lv <- levels(col)
+    return(if (length(lv) == 2L) lv else character())
+  }
+  vals <- sort(unique(col[!is.na(col)]))
+  # 0/1 keeps both values even when only one of them was observed, for the
+  # same reason a factor keeps a declared level nobody had.
+  if (is.numeric(col)) {
+    return(if (length(vals) && all(vals %in% c(0, 1))) c("0", "1")
+           else character())
+  }
+  if (is.character(col) && length(vals) == 2L) return(as.character(vals))
+  character()
+}
+
+#' The two values of one named column, or `character(0)`
+#' @keywords internal
+#' @noRd
+gs_binary_values_of <- function(dt, y) {
+  y <- y %||% ""
+  if (!nzchar(y) || !y %in% names(dt)) return(character())
+  gs_binary_values(dt[[y]])
+}
+
+#' Is a column an outcome that either happened or did not?
+#'
+#' Stricter than `gs_is_event_col()`, which accepts a 1/2 coding because
+#' `Surv()` reads it as censored-then-event. A proportion has to know which of
+#' the two values it is counting; see `gs_binary_values()`.
+#' @keywords internal
+#' @noRd
+gs_is_binary_col <- function(col) length(gs_binary_values(col)) == 2L
+
+#' Which of an outcome's two values is being counted
+#'
+#' Falls back to the second, and to `""` when the column is not an outcome at
+#' all -- which is what keeps a stale choice, left behind by a different Y
+#' variable, from reaching the generated code.
+#' @keywords internal
+#' @noRd
+gs_err_event <- function(dt, y, chosen = NULL) {
+  y <- y %||% ""
+  if (!nzchar(y) || !y %in% names(dt)) return("")
+  vals <- gs_binary_values(dt[[y]])
+  if (!length(vals)) return("")
+  if (!is.null(chosen) && length(chosen) == 1L && chosen %in% vals) {
+    return(as.character(chosen))
+  }
+  vals[[2L]]
+}
+
+#' Does a column hold a moment in time rather than a measurement?
+#'
+#' `IDate` inherits from `Date`, so naming `Date` covers it. `ITime` is named
+#' separately because it inherits from nothing here and `is.numeric()` on one
+#' is `TRUE`: left unnamed, a time of day is offered as a continuous
+#' measurement to plot on an axis, and as a Kaplan-Meier follow-up time, purely
+#' because it is stored as a number of seconds past midnight.
+#'
+#' A `difftime` is deliberately not here. `is.numeric()` on one is already
+#' `FALSE`, so it was never mistaken for a measurement, and it is an elapsed
+#' length rather than a moment: there is no month or season to ask it for.
+#' @keywords internal
+#' @noRd
+gs_is_temporal_col <- function(col) {
+  inherits(col, c("Date", "POSIXct", "POSIXlt", "ITime"))
+}
+
+#' Does a column carry a time of day, and not only a date?
+#'
+#' A `Date` has none: `data.table::hour()` answers 0 for every row of one
+#' rather than refusing, so an hour taken from a date would be a column with a
+#' single value in it. Asked before a rule is added, so that the app can say
+#' which it is instead of reporting one empty group.
+#' @keywords internal
+#' @noRd
+gs_has_clock <- function(col) inherits(col, c("POSIXct", "POSIXlt", "ITime"))
+
+#' Does a column carry a date, and not only a time of day?
+#'
+#' An `ITime` does not. `data.table::month()` on one is an error rather than a
+#' wrong answer, which would otherwise reach the user as a raw
+#' "do not know how to convert 'x' to class Date".
+#' @keywords internal
+#' @noRd
+gs_has_calendar <- function(col) inherits(col, c("Date", "POSIXct", "POSIXlt"))
 
 #' Can a column be handed to `survival::Surv()` as the event indicator?
 #'
@@ -144,17 +263,35 @@ gs_classify_vars <- function(dt, max_levels = 50L, max_coded_levels = 9L) {
 #' @noRd
 gs_is_event_col <- function(col) {
   if (is.logical(col)) return(TRUE)
-  if (!is.numeric(col) || inherits(col, c("Date", "POSIXct"))) return(FALSE)
+  if (!is.numeric(col) || gs_is_temporal_col(col)) return(FALSE)
   vals <- unique(col[!is.na(col)])
   if (!length(vals) || length(vals) > 2L) return(FALSE)
   all(vals %in% c(0, 1)) || all(vals %in% c(1, 2))
+}
+
+#' Whether the X column holds a date, a date-time, or neither
+#'
+#' Decides between `scale_x_date()` and `scale_x_datetime()`, and -- because
+#' ggplot2 refuses a numeric range on a date axis outright -- whether the
+#' typed X-axis range can be used at all. Read from the classified data rather
+#' than from the spec, which is why it is set by the server and not by
+#' `gs_spec_from_input()`.
+#' @keywords internal
+#' @noRd
+gs_x_time_class <- function(dt, x) {
+  if (!nzchar(x %||% "") || !x %in% names(dt)) return("")
+  col <- dt[[x]]
+  if (inherits(col, c("POSIXct", "POSIXlt"))) return("datetime")
+  if (inherits(col, "Date")) return("date")
+  ""
 }
 
 #' Names of columns matching a role
 #' @keywords internal
 #' @noRd
 gs_vars_of <- function(info, role = c("continuous", "categorical", "stratify",
-                                      "numeric", "event", "all")) {
+                                      "numeric", "event", "binary", "temporal",
+                                      "all")) {
   role <- match.arg(role)
   if (is.null(info) || !nrow(info)) return(character())
   switch(
@@ -164,6 +301,8 @@ gs_vars_of <- function(info, role = c("continuous", "categorical", "stratify",
     stratify    = info[can_stratify == TRUE, var],
     numeric     = info[is_numeric == TRUE, var],
     event       = info[is_event == TRUE, var],
+    binary      = info[is_binary == TRUE, var],
+    temporal    = info[is_temporal == TRUE, var],
     all         = info$var
   )
 }
@@ -183,9 +322,17 @@ gs_vars_of <- function(info, role = c("continuous", "categorical", "stratify",
 #' @return A named list of character vectors, one per `selectInput` id.
 #' @keywords internal
 #' @noRd
-gs_selector_choices <- function(info, cut_method = "quantile") {
+gs_selector_choices <- function(info, cut_method = "quantile",
+                                plot_type = "Boxplot") {
   all_vars <- gs_vars_of(info, "all")
   continuous <- gs_vars_of(info, "continuous")
+  # A Dot + Error figure can describe a proportion as well as a measurement,
+  # and a 0/1 outcome is not continuous -- having two values is what rules it
+  # out as one. Left at that it would not appear in the Y list at all, so the
+  # one plot type that can draw it is the one that offers it.
+  if (identical(plot_type, GS_DOT)) {
+    continuous <- union(continuous, gs_vars_of(info, "binary"))
+  }
   # Fall back to every variable when nothing looks continuous, so the app is
   # still usable on oddly typed data.
   y_choices <- if (length(continuous)) continuous else all_vars
@@ -206,10 +353,33 @@ gs_selector_choices <- function(info, cut_method = "quantile") {
     # Categorizing a variable that is already categorical would do nothing --
     # except when the question is whether it has a value at all, which is
     # worth asking of a factor, a character column or a date just as much as
-    # of a number.
-    cut_var = if (identical(cut_method, "missing")) all_vars else continuous
+    # of a number. A time resolution is the mirror image: it is the one method
+    # that only a date or a time can answer.
+    cut_var = switch(cut_method,
+                     missing = all_vars,
+                     period = gs_vars_of(info, "temporal"),
+                     continuous)
   )
   lapply(out, function(x) c(GS_NONE, x))
+}
+
+#' The error bars a Y variable can carry
+#'
+#' A measurement has a mean and a spread around it; a 0/1 outcome has a
+#' proportion and no spread to speak of. The two sets do not overlap, so the
+#' list offered is the one that applies rather than the whole of
+#' `GS_ERR_TYPES` with half of it refused after the fact.
+#' @keywords internal
+#' @noRd
+gs_err_choices <- function(info, y) {
+  binary <- !is.null(info) && nrow(info) && nzchar(y %||% "") &&
+    y %in% gs_vars_of(info, "binary")
+  keep <- if (binary) {
+    GS_ERR_TYPES %in% GS_ERR_PROP_TYPES
+  } else {
+    !GS_ERR_TYPES %in% GS_ERR_PROP_TYPES
+  }
+  GS_ERR_TYPES[keep]
 }
 
 #' Choices for the layer selectors, labelled with level counts
