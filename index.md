@@ -121,6 +121,19 @@ dates can be shown and labelled as years.
 `admit_date` spans three calendar years, so `ggstratify(epi_cohort)` is
 enough to try both.
 
+## Survey weights
+
+Set a numeric column as the **Survey weight** under **Describe**, and
+each row counts for as many people as its weight –
+`aes(weight = survey_weight)` for a histogram, density, boxplot or
+violin, and a weighted fit for a smoother. Every N is shown twice, as
+rows and as the sum of the weights. The bar on a **Dot + Error** figure
+and the band on a Kaplan-Meier curve are design-based estimates from the
+[survey](https://CRAN.R-project.org/package=survey) package, with the
+**sampling strata** and **clusters** as well when you give them. The
+design is the whole sample’s, and every panel and figure is a
+subpopulation of it. `svy_weight` in `epi_cohort` is there to try it on.
+
 ## Acknowledgements
 
 - Claude Code (Anthropic’s Claude Opus 5) assisted with adding notes,

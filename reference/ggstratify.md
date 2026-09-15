@@ -119,6 +119,26 @@ A *Line* or *Scatter* figure can carry a LOWESS smoother –
 – with its span under your control and, when a grouping variable is set,
 one fit per group.
 
+## Survey weights
+
+Under **Describe**, **Survey weight** takes a numeric column that is
+never negative. Each row then counts for as many people as its weight: a
+histogram, density, boxplot or violin is drawn through `ggplot2`'s
+`weight` aesthetic, and a smoother is fitted with the weights. Every
+count is reported twice, as the rows a figure is drawn from and as the
+sum of their weights. The bar on a *Dot + Error* figure and the band on
+a *Kaplan-Meier curve* are design-based estimates from
+[`survey::svymean()`](https://rdrr.io/pkg/survey/man/surveysummary.html),
+[`survey::svyciprop()`](https://rdrr.io/pkg/survey/man/svyciprop.html)
+and [`survey::svykm()`](https://rdrr.io/pkg/survey/man/svykm.html).
+**Sampling strata** and **Clusters** complete the design, with a cluster
+ID read within its stratum; the design is built over the whole sample,
+and every panel and figure is a subpopulation of it. A dotplot cannot be
+weighted, and rows with no weight, stratum or cluster are excluded and
+counted. `svy_weight` in
+[epi_cohort](https://akishiroshita.github.io/ggstratify/reference/epi_cohort.md)
+is a weight to try this on.
+
 ## Before you start
 
 Convert each column to the type you mean it to have – `numeric` for

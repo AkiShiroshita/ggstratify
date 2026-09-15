@@ -160,6 +160,25 @@ through <code><a href="https://ggplot2.tidyverse.org/reference/geom_smooth.html"
 when a grouping variable is set, one fit per group.</p>
     </div>
     <div class="section level2">
+    <h2 id="survey-weights">Survey weights<a class="anchor" aria-label="anchor" href="#survey-weights"></a></h2>
+
+
+
+<p>Under <strong>Describe</strong>, <strong>Survey weight</strong> takes a numeric column that is never
+negative. Each row then counts for as many people as its weight: a
+histogram, density, boxplot or violin is drawn through <code>ggplot2</code>'s <code>weight</code>
+aesthetic, and a smoother is fitted with the weights. Every count is
+reported twice, as the rows a figure is drawn from and as the sum of their
+weights. The bar on a <em>Dot + Error</em> figure and the band on a <em>Kaplan-Meier
+curve</em> are design-based estimates from <code><a href="https://rdrr.io/pkg/survey/man/surveysummary.html" class="external-link">survey::svymean()</a></code>,
+<code><a href="https://rdrr.io/pkg/survey/man/svyciprop.html" class="external-link">survey::svyciprop()</a></code> and <code><a href="https://rdrr.io/pkg/survey/man/svykm.html" class="external-link">survey::svykm()</a></code>. <strong>Sampling strata</strong> and
+<strong>Clusters</strong> complete the design, with a cluster ID read within its stratum;
+the design is built over the whole sample, and every panel and figure is a
+subpopulation of it. A dotplot cannot be weighted, and rows with no weight,
+stratum or cluster are excluded and counted. <code>svy_weight</code> in <a href="epi_cohort.html">epi_cohort</a>
+is a weight to try this on.</p>
+    </div>
+    <div class="section level2">
     <h2 id="before-you-start">Before you start<a class="anchor" aria-label="anchor" href="#before-you-start"></a></h2>
 
 

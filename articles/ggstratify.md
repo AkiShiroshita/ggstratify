@@ -56,7 +56,7 @@ ggstratify(epi_cohort)
 ``` r
 
 str(epi_cohort)
-#> 'data.frame':    600 obs. of  12 variables:
+#> 'data.frame':    600 obs. of  13 variables:
 #>  $ id        : chr  "P0001" "P0002" "P0003" "P0004" ...
 #>  $ age       : num  66 78 57 42 57 64 64 67 72 69 ...
 #>  $ sex       : Factor w/ 2 levels "Male","Female": 1 1 2 2 2 1 2 2 2 1 ...
@@ -69,6 +69,7 @@ str(epi_cohort)
 #>  $ fu_days   : num  229 65 258 289 141 4 235 365 40 365 ...
 #>  $ death     : int  1 1 0 0 1 0 0 0 0 0 ...
 #>  $ admit_date: Date, format: "2021-11-05" "2021-03-24" ...
+#>  $ svy_weight: num  110 32.2 102.1 34.5 32 ...
 ```
 
 The same function works with any data frame, tibble, data.table, or
@@ -203,6 +204,69 @@ check.
 
 `death` in the bundled `epi_cohort` is coded 0 and 1, so
 `ggstratify(epi_cohort)` is enough to try this.
+
+## Survey weights
+
+Data from a survey rarely describe the people in them one to one: each
+row stands for as many people as its weight. Choose the weight column
+under **Survey weight** in **Describe**, and a histogram is drawn the
+way you would draw it by hand:
+
+``` r
+
+ggplot(d, aes(x = age, weight = survey_weight)) +
+  geom_histogram()
+```
+
+Densities, boxplots and violins take the weight the same way, and a
+smoother is fitted with it. A dotplot draws one dot per row, so it
+cannot be weighted and is refused rather than drawn as though the weight
+were not there.
+
+Every count is then reported twice: `N`, the rows a figure or panel is
+drawn from, and the weighted N, the sum of their weights. The first says
+how far to trust the figure’s shape, the second how many people it
+describes.
+
+A bar or a band is a different matter, because a weighted standard error
+is not an unweighted one computed on weighted data. The bar on a **Dot +
+Error** figure and the band on a Kaplan-Meier curve are estimated with
+the ‘survey’ package, and the functions that do it are printed on the
+**R-code** tab:
+
+``` r
+
+dt[, .svy_row := .I]
+des <- survey::svydesign(ids = ~ward, strata = ~site, weights = ~svy_weight,
+                         nest = TRUE, data = as.data.frame(dt))
+
+survey::svymean(~crp, des[rows, ])                      # a mean and its SE
+survey::svyciprop(~died, des[rows, ], method = "beta")  # a proportion
+survey::svykm(survival::Surv(fu_days, death) ~ 1, des[rows, ], se = TRUE)
+```
+
+**Sampling strata** and **Clusters (primary sampling units)**, under the
+weight, complete the design; either can be left empty. A cluster ID is
+read within its stratum, so ward 1 of one site is not ward 1 of the
+next.
+
+The design is built once, over the whole sample, before any row is set
+aside for a panel or a figure. Each point and each curve is then a
+subpopulation of it – `rows` above – so its standard error counts every
+stratum and cluster in the sample, the ones it holds no rows of
+included, and its interval is read on the whole design’s degrees of
+freedom. A design rebuilt on one figure’s rows would have forgotten the
+clusters that figure happens not to hold, and would give a different
+answer. The exact proportion interval is Korn and Graubard’s, the survey
+counterpart of Clopper-Pearson; Wilson is `svyciprop()`’s own.
+
+A stratum with a single cluster has nothing to estimate a variance from.
+The app names it and asks you to merge it with a neighbouring stratum
+first.
+
+`svy_weight` in `epi_cohort` reads the cohort as a sample in which
+severe presentations were over-sampled, so the weighted figures describe
+a mostly mild population; `site` can stand in for the strata.
 
 ## Turning the tick labels
 

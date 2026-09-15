@@ -2,6 +2,57 @@
 
 ## ggstratify 0.2.0
 
+- **Survey weights.** A numeric column can be set as the survey weight
+  under **Describe**. Each row then counts for as many people as its
+  weight: histograms, densities, boxplots and violins are drawn through
+  `ggplot2`’s `weight` aesthetic, and a LOWESS smoother is fitted with
+  the weights. A dotplot draws one dot per row and cannot be weighted,
+  so it is refused with the reason rather than drawn unweighted.
+
+- A weighted figure reports two counts wherever it reports one – in the
+  title, on every panel strip, in the **Strata** tab and in the
+  number-at-risk table: `N`, the rows the figure is drawn from, and the
+  weighted N, the sum of their weights. They answer different questions,
+  and neither can be read off the other. The minimum N per figure is
+  still a number of rows.
+
+- The bar on a weighted **Dot + Error** figure and the band on a
+  weighted Kaplan-Meier curve are design-based, estimated with the
+  ‘survey’ package, which is now a dependency. The design takes the
+  weight and, optionally, the **sampling strata** and the **clusters**
+  (primary sampling units), with a cluster ID read within its stratum
+  (`nest = TRUE`). A mean gets its standard error or its t interval; a
+  proportion gets `svyciprop()`’s Korn-Graubard interval (in place of
+  Clopper-Pearson) or its Wilson interval. The curve is `svykm()`, and
+  its band is drawn on the log scale as
+  [`confint()`](https://rdrr.io/r/stats/confint.html) draws it.
+
+- The design is built once, over the whole sample, before any row is set
+  aside for a layer, and every panel and figure is a subpopulation of
+  it. Its standard errors therefore count every stratum and cluster in
+  the sample – including the clusters it holds none of – rather than
+  those of a design rebuilt on its own rows, and its intervals are read
+  on the whole design’s degrees of freedom. The generated script builds
+  the design in the same place.
+
+- A stratum that holds a single cluster has no variance to estimate, and
+  a figure that needs one is refused with the stratum named and a
+  suggestion to merge it, rather than failing inside ‘survey’. A row
+  with no stratum or cluster is excluded and counted, as a row with no
+  weight is.
+
+- `epi_cohort` gains `svy_weight`, a survey weight that reads the cohort
+  as a sample of about 50,000 admissions with the severe presentations
+  over-sampled. The other twelve columns are unchanged.
+
+- A smoother’s band is not offered while a weight is set.
+  [`loess()`](https://rdrr.io/r/stats/loess.html) reads a weight as the
+  precision of an observation, not as the number of people it stands
+  for, so the band would not be a design-based interval.
+
+- A row with no weight is excluded and counted, in the same place and
+  the same way as a row with no value for a layer variable.
+
 - **Derive a variable** gains a fifth method: *time resolution*. A date
   or a date-time is read at whatever resolution the question is asked
   at, and the answer is a variable that can be used as a layer like any

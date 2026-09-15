@@ -12,7 +12,7 @@ epi_cohort
 
 ## Format
 
-A data frame with 600 rows and 12 columns:
+A data frame with 600 rows and 13 columns:
 
 - id:
 
@@ -66,6 +66,11 @@ A data frame with 600 rows and 12 columns:
   Date of admission, over 2021 to 2023. Moderate and severe cases
   cluster in the winter, mild ones in the summer.
 
+- svy_weight:
+
+  Survey weight: the number of admissions each patient stands for,
+  larger for the under-sampled mild presentations. Sums to about 50,000.
+
 ## Source
 
 Simulated by `data-raw/epi_cohort.R`.
@@ -98,6 +103,14 @@ severe presentations cluster in the winter and mild ones spread into the
 summer, so a season carries a real difference in `crp` and in `los_days`
 rather than noise.
 
+`svy_weight` is the fifth. It reads the cohort as a sample of some
+50,000 admissions in which severe presentations were over-sampled and
+mild ones under-sampled, and gives each patient the number of admissions
+they stand for. Set it as the survey weight and the weighted cohort is
+mostly mild, as the admissions were: a weighted mean of `crp` and a
+weighted proportion of `death` come out below the unweighted ones.
+`site` can serve as the sampling strata to try those controls with it.
+
 `fu_days` and `death` make the data usable for a Kaplan-Meier curve,
 `age` for the methods that cut a continuous variable into groups, `crp`
 for the one that splits a variable by whether it has a value, and
@@ -107,7 +120,7 @@ for the one that splits a variable by whether it has a value, and
 
 ``` r
 str(epi_cohort)
-#> 'data.frame':    600 obs. of  12 variables:
+#> 'data.frame':    600 obs. of  13 variables:
 #>  $ id        : chr  "P0001" "P0002" "P0003" "P0004" ...
 #>  $ age       : num  66 78 57 42 57 64 64 67 72 69 ...
 #>  $ sex       : Factor w/ 2 levels "Male","Female": 1 1 2 2 2 1 2 2 2 1 ...
@@ -120,6 +133,7 @@ str(epi_cohort)
 #>  $ fu_days   : num  229 65 258 289 141 4 235 365 40 365 ...
 #>  $ death     : int  1 1 0 0 1 0 0 0 0 0 ...
 #>  $ admit_date: Date, format: "2021-11-05" "2021-03-24" ...
+#>  $ svy_weight: num  110 32.2 102.1 34.5 32 ...
 
 # The empty stratum that the app reports with n = 0.
 table(epi_cohort$site)
