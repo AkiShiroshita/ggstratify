@@ -54,7 +54,7 @@ gs_clean_names <- function(dt) {
   # Reserved names used by the preview machinery and by the Kaplan-Meier
   # fit, which would otherwise be overwritten by a column of the same name.
   reserved <- c(".strat_var", ".strat_level", ".strat_label", ".gs_stratum",
-                GS_FACET_COL, GS_KM_COLS)
+                GS_FACET_COL, GS_KM_COLS, GS_SVY_COLS)
   nms[nms %in% reserved] <- paste0(nms[nms %in% reserved], "_")
   # Last, and after the two renames above rather than before: filling a blank
   # name and escaping a reserved one can each land on a name already in use --
@@ -101,7 +101,8 @@ gs_classify_vars <- function(dt, max_levels = 50L, max_coded_levels = 9L) {
       var = character(), class = character(), n_levels = integer(),
       n_missing = integer(), is_continuous = logical(),
       is_categorical = logical(), is_numeric = logical(), is_event = logical(),
-      is_binary = logical(), is_temporal = logical(), can_stratify = logical()
+      is_binary = logical(), is_temporal = logical(), is_weight = logical(),
+      can_stratify = logical()
     ))
   }
 
@@ -126,7 +127,10 @@ gs_classify_vars <- function(dt, max_levels = 50L, max_coded_levels = 9L) {
       is_binary = gs_is_binary_col(col),
       # For the time-resolution method, which is the one thing a date can be
       # asked and a number cannot.
-      is_temporal = gs_is_temporal_col(col)
+      is_temporal = gs_is_temporal_col(col),
+      # For the survey weight, which counts a row as many people as it
+      # stands for: a count cannot be negative, and a weight of Inf is not one.
+      is_weight = gs_is_weight_col(col)
     )
   }))
 
@@ -230,6 +234,19 @@ gs_is_temporal_col <- function(col) {
   inherits(col, c("Date", "POSIXct", "POSIXlt", "ITime"))
 }
 
+#' Can a column be used as a survey weight?
+#'
+#' A number, not a moment in time, with no negative or infinite value and at
+#' least one positive one. A missing weight does not disqualify the column --
+#' those rows are excluded and counted, the way a missing layer value is.
+#' @keywords internal
+#' @noRd
+gs_is_weight_col <- function(col) {
+  if (!is.numeric(col) || gs_is_temporal_col(col)) return(FALSE)
+  vals <- col[!is.na(col)]
+  length(vals) > 0L && all(is.finite(vals)) && all(vals >= 0) && any(vals > 0)
+}
+
 #' Does a column carry a time of day, and not only a date?
 #'
 #' A `Date` has none: `data.table::hour()` answers 0 for every row of one
@@ -291,7 +308,7 @@ gs_x_time_class <- function(dt, x) {
 #' @noRd
 gs_vars_of <- function(info, role = c("continuous", "categorical", "stratify",
                                       "numeric", "event", "binary", "temporal",
-                                      "all")) {
+                                      "weight", "all")) {
   role <- match.arg(role)
   if (is.null(info) || !nrow(info)) return(character())
   switch(
@@ -303,6 +320,7 @@ gs_vars_of <- function(info, role = c("continuous", "categorical", "stratify",
     event       = info[is_event == TRUE, var],
     binary      = info[is_binary == TRUE, var],
     temporal    = info[is_temporal == TRUE, var],
+    weight      = info[is_weight == TRUE, var],
     all         = info$var
   )
 }
@@ -344,6 +362,12 @@ gs_selector_choices <- function(info, cut_method = "quantile",
     # A subject identifier has as many levels as there are subjects, so it is
     # drawn from every variable rather than from the stratifying pool.
     idvar = all_vars,
+    weight = gs_vars_of(info, "weight"),
+    # A stratum or cluster can be coded any way at all -- a number, a factor,
+    # an ID string -- and a cluster ID has as many values as there are
+    # clusters, so neither is drawn from the stratifying pool.
+    design_strata = all_vars,
+    design_cluster = all_vars,
     # The facet layer and the separate-figure layers come from the same pool:
     # a variable with few enough levels to be worth splitting on.
     facet = gs_vars_of(info, "stratify"),
@@ -473,17 +497,24 @@ gs_stratum_label <- function(dt, strat_vars) {
 #' @param strat_vars Character vector of stratifying column names.
 #' @param min_n Strata with fewer than this many rows are marked `keep = FALSE`.
 #' @param mode `"independent"` or `"crossed"`.
+#' @param weight A survey weight column, or `""`. When given, the table gains
+#'   an `n_w` column beside `n`: the sum of the weights, which is the number of
+#'   people the stratum stands for. `n` is still the number of rows, and it is
+#'   still what `min_n` is measured in -- a figure is drawn from rows, however
+#'   many people each one represents.
 #' @return A `data.table` with columns `var`, `level`, `label`, `file`, `n`,
-#'   `keep`, `status`; zero rows when `strat_vars` is empty.
+#'   (`n_w`,) `keep`, `status`; zero rows when `strat_vars` is empty.
 #' @keywords internal
 #' @noRd
 gs_strata_table <- function(dt, strat_vars, min_n = 0L,
-                            mode = c("independent", "crossed")) {
+                            mode = c("independent", "crossed"), weight = "") {
   mode <- match.arg(mode)
+  weight <- if (nzchar(weight %||% "") && weight %in% names(dt)) weight else ""
   empty <- data.table::data.table(
     var = character(), level = character(), label = character(),
     file = character(), n = integer(), keep = logical(), status = character()
   )
+  if (nzchar(weight)) empty[, n_w := numeric()]
   strat_vars <- intersect(strat_vars, names(dt))
   if (!length(strat_vars)) return(empty)
   min_n <- as.integer(min_n)
@@ -493,9 +524,9 @@ gs_strata_table <- function(dt, strat_vars, min_n = 0L,
   dt <- dt[gs_complete_layers(dt, strat_vars)]
 
   out <- if (mode == "crossed") {
-    gs_strata_crossed(dt, strat_vars)
+    gs_strata_crossed(dt, strat_vars, weight)
   } else {
-    gs_strata_independent(dt, strat_vars)
+    gs_strata_independent(dt, strat_vars, weight)
   }
 
   if (!nrow(out)) return(empty)
@@ -507,14 +538,18 @@ gs_strata_table <- function(dt, strat_vars, min_n = 0L,
   out[n == 0L, status := "skipped: n = 0, no figure"]
 
   data.table::setcolorder(
-    out, c("var", "level", "label", "file", "n", "keep", "status"))
+    out, c("var", "level", "label", "file", "n", if (nzchar(weight)) "n_w",
+           "keep", "status"))
   out[]
 }
 
 #' One stratum per level of each variable, taken one variable at a time
 #' @keywords internal
 #' @noRd
-gs_strata_independent <- function(dt, strat_vars) {
+gs_strata_independent <- function(dt, strat_vars, weight = "") {
+  # The weights are summed outside data.table's `[`, where a weight column
+  # that happens to be called `w` would be read in place of this vector.
+  w <- if (nzchar(weight)) as.numeric(dt[[weight]]) else NULL
   out <- data.table::rbindlist(lapply(strat_vars, function(v) {
     all_levels <- gs_levels_of(dt[[v]])
 
@@ -525,7 +560,14 @@ gs_strata_independent <- function(dt, strat_vars) {
 
     n <- counts$n[match(all_levels, counts$level)]
     n[is.na(n)] <- 0L
-    data.table::data.table(var = v, level = all_levels, n = as.integer(n))
+    part <- data.table::data.table(var = v, level = all_levels, n = as.integer(n))
+    if (!is.null(w)) {
+      # split() over the declared levels, so a level nobody is in sums to 0.
+      sums <- vapply(split(w, factor(as.character(dt[[v]]), levels = all_levels)),
+                     sum, numeric(1L), USE.NAMES = FALSE)
+      data.table::set(part, j = "n_w", value = sums)
+    }
+    part
   }), use.names = TRUE)
 
   if (!nrow(out)) return(out)
@@ -542,7 +584,7 @@ gs_strata_independent <- function(dt, strat_vars) {
 #' reported as a count instead, by `attr(x, "n_possible")`.
 #' @keywords internal
 #' @noRd
-gs_strata_crossed <- function(dt, strat_vars) {
+gs_strata_crossed <- function(dt, strat_vars, weight = "") {
   counts <- dt[, .N, by = c(strat_vars)]
   if (!nrow(counts)) return(data.table::data.table())
 
@@ -562,6 +604,15 @@ gs_strata_crossed <- function(dt, strat_vars) {
     file = gs_safe_name(gs_stratum_key(counts, strat_vars)),
     n = as.integer(counts$N)
   )
+  if (nzchar(weight)) {
+    # Summed outside `[`, for the reason given in gs_strata_independent().
+    key_of <- function(d) {
+      do.call(paste, c(lapply(strat_vars, function(v) as.character(d[[v]])),
+                       list(sep = "\r")))
+    }
+    sums <- vapply(split(as.numeric(dt[[weight]]), key_of(dt)), sum, numeric(1L))
+    data.table::set(out, j = "n_w", value = unname(sums[key_of(counts)]))
+  }
   # How many combinations the variables could have formed, so that the app can
   # say how much of the cross-product is empty.
   data.table::setattr(out, "n_possible", prod(vapply(keys, length, integer(1L))))
@@ -573,9 +624,30 @@ gs_strata_crossed <- function(dt, strat_vars) {
 #' One spelling of the size, used by the figure titles, the facet strips of the
 #' all-figures preview and the panel strips of a facetted figure alike, so that
 #' a reader meets the same notation wherever a count appears.
+#'
+#' A weighted figure carries both counts, because they answer different
+#' questions: `N` is how many rows the figure was drawn from, which is what
+#' says how far to trust its shape, and the weighted N is how many people
+#' those rows stand for. Neither can be read off the other.
+#'
+#' @param n_w The sum of the weights, or `NULL` for an unweighted figure.
 #' @keywords internal
 #' @noRd
-gs_label_n <- function(label, n) sprintf("%s (N = %d)", label, as.integer(n))
+gs_label_n <- function(label, n, n_w = NULL) {
+  if (is.null(n_w)) return(sprintf("%s (N = %d)", label, as.integer(n)))
+  sprintf("%s (N = %d; weighted N = %s)", label, as.integer(n),
+          gs_format_weighted_n(n_w))
+}
+
+#' A sum of weights as it is printed: rounded, with thousands separated
+#'
+#' The generated `add_facet_n()` spells out the same expression, so a strip
+#' drawn by the app and one drawn by the script read the same.
+#' @keywords internal
+#' @noRd
+gs_format_weighted_n <- function(x) {
+  format(round(x), big.mark = ",", scientific = FALSE, trim = TRUE)
+}
 
 #' Make a string safe to use as a file name
 #' @keywords internal
@@ -603,12 +675,14 @@ gs_safe_name <- function(x) {
 #' @param mode `"independent"` or `"crossed"`.
 #' @param label_n Whether the strip carries the stratum size, following the
 #'   same switch as the figure titles.
+#' @param weight A survey weight column among `plot_cols`, or `""`; when given,
+#'   each strip carries the weighted N beside the N.
 #' @return A `data.table` with an extra `.strat_label` factor column.
 #' @keywords internal
 #' @noRd
 gs_long_strata <- function(dt, strat_vars, plot_cols, min_n = 0L,
                            mode = c("independent", "crossed"),
-                           label_n = TRUE) {
+                           label_n = TRUE, weight = "") {
   mode <- match.arg(mode)
   strat_vars <- intersect(strat_vars, names(dt))
   plot_cols <- intersect(unique(plot_cols), names(dt))
@@ -645,8 +719,14 @@ gs_long_strata <- function(dt, strat_vars, plot_cols, min_n = 0L,
   # in this panel?" without a trip to the Strata tab. Strata with no rows
   # cannot appear here at all, which is why they are reported separately.
   sizes <- long[, .N, by = .strat_label]
+  # Summed outside `[`, for the reason given in gs_strata_independent().
+  n_w <- if (nzchar(weight %||% "") && weight %in% names(long)) {
+    sums <- vapply(split(as.numeric(long[[weight]]), long$.strat_label), sum,
+                   numeric(1L))
+    unname(sums[as.character(sizes$.strat_label)])
+  }
   labels <- if (isTRUE(label_n)) {
-    gs_label_n(sizes$.strat_label, sizes$N)
+    gs_label_n(sizes$.strat_label, sizes$N, n_w)
   } else {
     sizes$.strat_label
   }
@@ -697,15 +777,17 @@ gs_one_stratum <- function(dt, spec, row) {
 #' @keywords internal
 #' @noRd
 gs_split_strata <- function(dt, spec, drop_empty = TRUE) {
-  cols <- gs_spec_cols(spec)
+  # The row position is there only once the design data has been built.
+  cols <- intersect(gs_data_cols(spec), names(dt))
   strat <- intersect(spec$strat_vars, names(dt))
   narrow <- function(d, extra = character()) {
     keep_cols <- unique(c(cols, extra))
     if (length(keep_cols)) d[, keep_cols, with = FALSE] else d
   }
 
-  # A row that does not say which stratum it belongs to is not put in one.
-  dt <- dt[gs_complete_layers(dt, gs_layer_vars(spec))]
+  # A row that does not say which stratum it belongs to is not put in one, and
+  # a row with no weight is not counted as any number of people.
+  dt <- dt[gs_complete_layers(dt, gs_exclude_vars(spec))]
 
   if (!length(strat)) {
     return(stats::setNames(list(narrow(dt)), ""))
@@ -730,6 +812,47 @@ gs_split_strata <- function(dt, spec, drop_empty = TRUE) {
   sizes <- vapply(out, nrow, integer(1L))
   # n == 0 is dropped regardless of min_n: there is nothing to draw.
   out[sizes > 0L & sizes >= min_n]
+}
+
+#' The rows a survey design is built over
+#'
+#' Every row with a value for each design variable, before any row is set
+#' aside for a layer. That order is the point: a panel or a figure is a
+#' subpopulation of the survey, and its standard error has to come from the
+#' design of the whole sample -- every stratum and every cluster in it -- not
+#' from a design rebuilt on the rows that happen to be in the panel. A cluster
+#' with none of its rows in a panel still counts towards that panel's variance.
+#'
+#' A design-based figure also gains `.svy_row`, each row's position in the
+#' design, which is how the rows of one figure find themselves in it after the
+#' data has been subset and split.
+#' @keywords internal
+#' @noRd
+gs_design_data <- function(dt, spec) {
+  dt <- dt[gs_complete_layers(dt, gs_design_vars(spec))]
+  if (gs_uses_design(spec)) dt[, .svy_row := .I]
+  dt[]
+}
+
+#' The survey design object, built by evaluating the generated lines
+#'
+#' The app builds the design the way it builds a derived column: by running
+#' the very code the R-code tab prints, so that the design behind the figure on
+#' screen and the one in the script cannot differ.
+#'
+#' @param dt Output of `gs_design_data()`.
+#' @return A `survey.design2`, or `NULL` when the figure needs none.
+#' @keywords internal
+#' @noRd
+gs_build_design <- function(dt, spec) {
+  if (!gs_uses_design(spec)) return(NULL)
+  # Narrowed first: svydesign() keeps a data frame of every column it is given.
+  cols <- intersect(gs_design_cols(spec), names(dt))
+  env <- new.env(parent = asNamespace("ggstratify"))
+  assign("dt", dt[, cols, with = FALSE], envir = env)
+  eval(parse(text = paste(gs_code_design_call(spec, "dt"), collapse = "\n")),
+       envir = env)
+  get("des", envir = env)
 }
 
 #' File-name stems for exported figures

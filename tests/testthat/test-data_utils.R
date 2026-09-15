@@ -418,7 +418,9 @@ test_that("a list-column is refused at the door, not inside the app", {
 })
 
 test_that("the shipped example data is what its documentation says it is", {
-  expect_equal(dim(epi_cohort), c(600L, 12L))
+  expect_equal(dim(epi_cohort), c(600L, 13L))
+  # The survey weight is complete and positive, so it can be set as is.
+  expect_true(all(epi_cohort$svy_weight > 0))
   # The n = 0 stratum only works if Site D survives as a declared level.
   expect_true("Site D" %in% levels(epi_cohort$site))
   expect_equal(sum(epi_cohort$site == "Site D"), 0L)

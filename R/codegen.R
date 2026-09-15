@@ -89,6 +89,32 @@ GS_FACET_N_HELPER <- c(
   ""
 )
 
+# The same helper for a weighted figure. A separate text rather than an
+# optional argument, so that an unweighted figure's code is unchanged.
+GS_FACET_N_WEIGHTED_HELPER <- c(
+  "# A panel that does not say how many observations it holds invites the",
+  "# reader to compare shapes drawn from 300 rows and from 8. With a survey",
+  "# weight the strip carries two counts: the rows the panel is drawn from,",
+  "# and the number of people they stand for, which is the sum of their",
+  "# weights. add_facet_n() writes both into the strip label, keeping the level",
+  "# order intact so that the panels stay in the order the factor declares.",
+  "add_facet_n <- function(d, var, weight) {",
+  "  d <- data.table::copy(data.table::as.data.table(d))",
+  "  v <- as.character(d[[var]])",
+  "  lv <- if (is.factor(d[[var]])) levels(d[[var]]) else sort(unique(v))",
+  "  f <- factor(v, levels = lv)",
+  "  sizes <- as.integer(table(f))",
+  "  wsums <- vapply(split(as.numeric(d[[weight]]), f), sum, numeric(1))",
+  "  strips <- sprintf(\"%s: %s (N = %d; weighted N = %s)\", var, lv, sizes,",
+  "                    format(round(wsums), big.mark = \",\",",
+  "                           scientific = FALSE, trim = TRUE))",
+  sprintf("  d[, %s := factor(strips[match(v, lv)], levels = strips)]",
+          GS_FACET_COL),
+  "  d[]",
+  "}",
+  ""
+)
+
 #' Does this figure label its panels with their size?
 #'
 #' Only a facet variable of the user's is labelled here. The all-figures
@@ -244,12 +270,25 @@ gs_code_cuts <- function(cuts, data_sym = "dt") {
 #' @keywords internal
 #' @noRd
 gs_code_layer_na <- function(spec, data_sym = "dt") {
-  vars <- gs_layer_vars(spec)
+  # A design-based figure has already set aside the rows the design cannot
+  # hold, in gs_code_design(); every other figure sets them aside here.
+  vars <- if (gs_uses_design(spec)) gs_layer_vars(spec) else gs_exclude_vars(spec)
   if (!length(vars)) return(character())
   c("# Rows with no value for a layer variable cannot be placed in a panel or",
     "# a figure, so they are excluded here -- once, before anything is counted.",
-    sprintf("layer_vars <- c(%s)", paste(gs_dq(vars), collapse = ", ")),
-    "for (v in layer_vars) {",
+    if (length(intersect(vars, gs_design_vars(spec)))) {
+      c("# A row with no survey weight, sampling stratum or cluster cannot be",
+        "# counted as part of the survey, and is excluded in the same way.")
+    },
+    gs_code_na_loop(vars, data_sym, "layer_vars"))
+}
+
+#' The loop that drops, and reports, the rows missing any of `vars`
+#' @keywords internal
+#' @noRd
+gs_code_na_loop <- function(vars, data_sym, name) {
+  c(sprintf("%s <- c(%s)", name, paste(gs_dq(vars), collapse = ", ")),
+    sprintf("for (v in %s) {", name),
     sprintf("  n_na <- sum(is.na(%s[[v]]))", data_sym),
     "  if (n_na > 0L) {",
     "    message(\"Excluded \", n_na, \" row(s) with a missing \", v, \".\")",
@@ -259,12 +298,59 @@ gs_code_layer_na <- function(spec, data_sym = "dt") {
     "")
 }
 
+# --- the survey design -------------------------------------------------------
+
+#' The block that builds the survey design, or `character(0)`
+#'
+#' Emitted before the layer rows are excluded and before the data is subset to
+#' one figure, because the design is the whole sample's: see
+#' `gs_design_data()`.
+#' @keywords internal
+#' @noRd
+gs_code_design <- function(spec, data_sym = "dt") {
+  if (!gs_uses_design(spec)) return(character())
+  c("# The survey design, built over every row with a value for each design",
+    "# variable, before any row is set aside for a layer. A panel or a figure",
+    "# is a subpopulation of this design, so its standard errors come from",
+    "# every stratum and cluster in the sample rather than from a design",
+    "# rebuilt on the rows it happens to hold. .svy_row is each row's place in",
+    "# the design, which is how a figure's rows find themselves in it.",
+    gs_code_na_loop(gs_design_vars(spec), data_sym, "design_vars"),
+    gs_code_design_call(spec, data_sym),
+    "")
+}
+
+#' The two lines that number the rows and build the design from them
+#'
+#' Also what the app evaluates to build its own design, see
+#' `gs_build_design()`.
+#' @keywords internal
+#' @noRd
+gs_code_design_call <- function(spec, data_sym = "dt") {
+  strata <- spec$design_strata %||% ""
+  cluster <- spec$design_cluster %||% ""
+  args <- c(
+    sprintf("ids = ~%s", if (nzchar(cluster)) gs_bt(cluster) else "1"),
+    if (nzchar(strata)) sprintf("strata = ~%s", gs_bt(strata)),
+    sprintf("weights = ~%s", gs_bt(spec$weight)),
+    # A cluster ID is read within its stratum: cluster 1 of one stratum is not
+    # cluster 1 of the next, which is how most surveys number them.
+    if (nzchar(strata) && nzchar(cluster)) "nest = TRUE")
+  c(sprintf("%s[, .svy_row := .I]", data_sym),
+    sprintf("des <- survey::svydesign(%s,", paste(args, collapse = ", ")),
+    sprintf("                         data = as.data.frame(%s))", data_sym))
+}
+
 # --- Kaplan-Meier ------------------------------------------------------------
 
 # Column names km_data() and km_risk() produce. Dot-prefixed so that they
 # cannot collide with a grouping variable the user is fitting by;
 # gs_clean_names() keeps the data free of them for the same reason.
 GS_KM_COLS <- c(".time", ".surv", ".lower", ".upper", ".ncens", ".nrisk")
+
+# The columns the survey-weighted helpers produce or work in, reserved for the
+# same reason.
+GS_SVY_COLS <- c(".y", ".ymin", ".ymax", ".w", ".svy_row", ".nrisk_label")
 
 # The helper the generated script defines once and the loop then calls. It is
 # emitted as text rather than exported so that the script stands on its own:
@@ -317,6 +403,81 @@ GS_KM_RISK_HELPER <- c(
   "  d[[\".t\"]] <- as.numeric(d[[time]])",
   "  d[[\".e\"]] <- as.numeric(d[[event]])",
   "  if (length(by)) d[, one(.t, .e), by = by] else d[, one(.t, .e)]",
+  "}",
+  ""
+)
+
+# The survey-weighted counterparts of the two helpers above, emitted instead of
+# them when a weight is set.
+GS_KM_WEIGHTED_HELPER <- c(
+  "# The survey-weighted counterpart of km_data(). survey::svykm() estimates",
+  "# each curve from `design`, the survey design built over every row of the",
+  "# data, as a subpopulation of it: the rows of `d` in that curve's group,",
+  "# found in the design by .svy_row. When se = TRUE it also estimates the",
+  "# design-based variance of the curve's log, strata and clusters included,",
+  "# from which the 95% band is drawn the way confint() on an svykm fit draws",
+  "# it. svykm() reports the event times only, so the censoring times are",
+  "# added as flat steps of the same curve, and counted for the censoring",
+  "# marks. Its estimate is not survfit()'s: even with every weight equal to",
+  "# one the two differ slightly, most in the tail.",
+  "km_data_weighted <- function(d, design, time, event, by = character(),",
+  "                             se = FALSE) {",
+  "  v <- design$variables",
+  "  design$variables[[\".t\"]] <- as.numeric(v[[time]])",
+  "  # Surv() reads 0/1, 1/2 and TRUE/FALSE alike; its status column is 0/1.",
+  "  design$variables[[\".e\"]] <- survival::Surv(as.numeric(v[[time]]),",
+  "    as.numeric(v[[event]]))[, \"status\"]",
+  "  cols <- unique(c(\".svy_row\", time, event, by))",
+  "  d <- data.table::as.data.table(d)[, ..cols]",
+  "  .ok <- !is.na(d[[time]]) & !is.na(d[[event]])",
+  "  d <- d[.ok]",
+  "  one <- function(rows) {",
+  "    tt <- design$variables[[\".t\"]][rows]",
+  "    ev <- design$variables[[\".e\"]][rows]",
+  "    times <- sort(unique(tt))",
+  "    # A curve with no event on it stays at 1, and so does its band.",
+  "    surv <- rep(1, length(times))",
+  "    lower <- upper <- rep(if (se) 1 else NA_real_, length(times))",
+  "    if (any(ev == 1)) {",
+  "      f <- survey::svykm(survival::Surv(.t, .e) ~ 1, design[rows, ], se = se)",
+  "      at <- findInterval(times, f$time)",
+  "      surv <- c(1, f$surv)[at + 1L]",
+  "      if (se) {",
+  "        half <- stats::qnorm(0.975) * sqrt(c(0, f$varlog)[at + 1L])",
+  "        lower <- surv * exp(-half)",
+  "        upper <- pmin(surv * exp(half), 1)",
+  "      }",
+  "    }",
+  "    list(.time  = c(0, times),",
+  "         .surv  = c(1, surv),",
+  "         .lower = c(1, lower),",
+  "         .upper = c(1, upper),",
+  "         .ncens = c(0L, tabulate(match(tt[ev == 0], times), length(times))))",
+  "  }",
+  "  if (length(by)) d[, one(.svy_row), by = by] else d[, one(.svy_row)]",
+  "}",
+  ""
+)
+
+GS_KM_RISK_WEIGHTED_HELPER <- c(
+  "# The number still at risk at each requested time, counted twice: the rows",
+  "# still being followed, and the people they stand for, which is the sum of",
+  "# their weights. Both go into one label, the weighted count in parentheses.",
+  "km_risk_weighted <- function(d, time, event, weight, times, by = character()) {",
+  "  one <- function(tt, w) {",
+  "    n <- vapply(times, function(s) sum(tt >= s), integer(1))",
+  "    n_w <- vapply(times, function(s) sum(w[tt >= s]), numeric(1))",
+  "    list(.time = times, .nrisk = n,",
+  "         .nrisk_label = sprintf(\"%d\\n(%s)\", n, format(round(n_w),",
+  "           big.mark = \",\", scientific = FALSE, trim = TRUE)))",
+  "  }",
+  "  cols <- unique(c(time, event, weight, by))",
+  "  d <- data.table::as.data.table(d)[, ..cols]",
+  "  .ok <- !is.na(d[[time]]) & !is.na(d[[event]])",
+  "  d <- d[.ok]",
+  "  d[[\".t\"]] <- as.numeric(d[[time]])",
+  "  d[[\".w\"]] <- as.numeric(d[[weight]])",
+  "  if (length(by)) d[, one(.t, .w), by = by] else d[, one(.t, .w)]",
   "}",
   ""
 )
@@ -388,6 +549,85 @@ GS_ERR_WILSON_HELPER <- c(
   ""
 )
 
+# A weighted Dot + Error figure cannot go through stat_summary(), which hands
+# its function the Y values and nothing else -- not the weights. The points
+# and their bars are estimated first, the way a Kaplan-Meier curve is, and the
+# figure is drawn from the estimates.
+GS_SVY_SUMMARY_HELPER <- c(
+  "# Survey-weighted points and bars for a Dot + Error figure, one row per",
+  "# point. `design` is the survey design built over every row of the data,",
+  "# and each point is a subpopulation of it -- the rows of `d` in that",
+  "# point's group, found in the design by .svy_row -- so its standard error",
+  "# comes from the whole design, strata and clusters included, rather than",
+  "# from a design rebuilt on the rows the group holds. Intervals are read on",
+  "# the whole design's degrees of freedom, as for any subpopulation.",
+  "#   bar = \"se\"      weighted mean, one standard error either side",
+  "#   bar = \"normal\"  weighted mean, t interval",
+  "#   bar = \"exact\"   svyciprop(method = \"beta\"): Korn and Graubard's",
+  "#                   survey counterpart of Clopper-Pearson",
+  "#   bar = \"wilson\"  svyciprop(method = \"wilson\"): the score interval",
+  "# At a proportion of exactly 0 or 1 the design variance is zero and",
+  "# svyciprop() has no effective sample size to work from, so the same",
+  "# interval is computed on Kish's effective sample size instead.",
+  "svy_summary <- function(d, design, y, by = character(), bar = \"se\",",
+  "                        conf = 0.95, event = NULL) {",
+  "  v <- design$variables[[y]]",
+  "  design$variables[[\".y\"]] <- if (is.null(event)) as.numeric(v) else",
+  "    as.numeric(as.character(v) == event)",
+  "  dof <- survey::degf(design)",
+  "  cols <- unique(c(\".svy_row\", y, by))",
+  "  d <- data.table::as.data.table(d)[, ..cols]",
+  "  .ok <- !is.na(d[[y]])",
+  "  d <- d[.ok]",
+  "  one <- function(rows) {",
+  "    part <- design[rows, ]",
+  "    m <- survey::svymean(~.y, part)",
+  "    p <- unname(coef(m))",
+  "    # One observation has no spread to estimate from, and a group whose",
+  "    # weights are all zero has no mean.",
+  "    if (length(rows) < 2L || is.na(p)) {",
+  "      return(list(.y = p, .ymin = NA_real_, .ymax = NA_real_))",
+  "    }",
+  "    ci <- if (bar == \"se\") {",
+  "      p + c(-1, 1) * as.numeric(survey::SE(m))",
+  "    } else if (bar == \"normal\") {",
+  "      confint(m, level = conf, df = dof)",
+  "    } else if (p > 0 && p < 1) {",
+  "      confint(survey::svyciprop(~.y, part, level = conf, df = dof,",
+  "        method = if (bar == \"exact\") \"beta\" else \"wilson\"))",
+  "    } else {",
+  "      w <- weights(part)",
+  "      n <- sum(w)^2 / sum(w^2)",
+  "      a <- 1 - conf",
+  "      if (bar == \"exact\") {",
+  "        c(if (p > 0) qbeta(a / 2, n * p, n * (1 - p) + 1) else 0,",
+  "          if (p < 1) qbeta(1 - a / 2, n * p + 1, n * (1 - p)) else 1)",
+  "      } else {",
+  "        z <- qnorm(1 - a / 2)",
+  "        centre <- (p + z^2 / (2 * n)) / (1 + z^2 / n)",
+  "        half <- z * sqrt(p * (1 - p) / n + z^2 / (4 * n^2)) / (1 + z^2 / n)",
+  "        c(max(0, centre - half), min(1, centre + half))",
+  "      }",
+  "    }",
+  "    list(.y = p, .ymin = unname(ci[1]), .ymax = unname(ci[2]))",
+  "  }",
+  "  # keyby rather than by, so the estimates read in the order of the levels.",
+  "  if (length(by)) d[, one(.svy_row), keyby = by] else d[, one(.svy_row)]",
+  "}",
+  ""
+)
+
+#' The variables a weighted Dot + Error figure is estimated separately within
+#'
+#' One point per x value, per colour and per panel: everything that separates
+#' one point from another has to separate its estimate too.
+#' @keywords internal
+#' @noRd
+gs_dot_by <- function(spec, facet_strata = FALSE) {
+  by <- c(spec$x, spec$group, gs_facet_col(spec, facet_strata))
+  unique(by[nzchar(by)])
+}
+
 #' The helper one error-bar setting needs defined, or `character(0)`
 #' @keywords internal
 #' @noRd
@@ -406,6 +646,8 @@ gs_err_helper <- function(err_type) {
 #' @keywords internal
 #' @noRd
 gs_code_dot_geom <- function(spec) {
+  # The estimates are already in the data the figure is drawn from.
+  if (gs_weighted(spec)) return("geom_pointrange()")
   if (identical(spec$err_type, "se")) {
     return("stat_summary(fun.data = mean_se, geom = \"pointrange\")")
   }
@@ -435,11 +677,18 @@ gs_km_by <- function(spec, facet_strata = FALSE) {
 #' @keywords internal
 #' @noRd
 gs_code_preamble <- function(spec, facet_strata = FALSE) {
-  c(if (gs_uses_facet_n(spec, facet_strata)) GS_FACET_N_HELPER,
-    if (identical(spec$plot_type, GS_DOT)) gs_err_helper(spec$err_type),
-    if (identical(spec$plot_type, GS_KM)) GS_KM_HELPER,
+  w <- gs_weighted(spec)
+  c(if (gs_uses_facet_n(spec, facet_strata)) {
+      if (w) GS_FACET_N_WEIGHTED_HELPER else GS_FACET_N_HELPER
+    },
+    if (identical(spec$plot_type, GS_DOT)) {
+      if (w) GS_SVY_SUMMARY_HELPER else gs_err_helper(spec$err_type)
+    },
+    if (identical(spec$plot_type, GS_KM)) {
+      if (w) GS_KM_WEIGHTED_HELPER else GS_KM_HELPER
+    },
     if (identical(spec$plot_type, GS_KM) && isTRUE(spec$km_risk)) {
-      GS_KM_RISK_HELPER
+      if (w) GS_KM_RISK_WEIGHTED_HELPER else GS_KM_RISK_HELPER
     })
 }
 
@@ -452,9 +701,15 @@ gs_code_preamble <- function(spec, facet_strata = FALSE) {
 #' @noRd
 gs_code_prep <- function(spec, data_sym = "d", facet_strata = FALSE) {
   lines <- character()
+  weighted <- gs_weighted(spec)
   if (gs_uses_facet_n(spec, facet_strata)) {
-    lines <- c(lines, sprintf("%s <- add_facet_n(%s, %s)", data_sym, data_sym,
-                              gs_dq(spec$facet)), "")
+    lines <- c(lines, sprintf("%s <- add_facet_n(%s, %s%s)", data_sym, data_sym,
+                              gs_dq(spec$facet),
+                              if (weighted) paste0(", ", gs_dq(spec$weight))
+                              else ""), "")
+  }
+  if (identical(spec$plot_type, GS_DOT) && weighted) {
+    return(c(lines, gs_code_svy_summary_call(spec, data_sym, facet_strata), ""))
   }
   if (!identical(spec$plot_type, GS_KM)) return(lines)
 
@@ -464,17 +719,44 @@ gs_code_prep <- function(spec, data_sym = "d", facet_strata = FALSE) {
   } else {
     ""
   }
-  c(lines,
+  fit <- if (weighted) {
+    sprintf("km <- km_data_weighted(%s, des, %s, %s%s%s)", data_sym,
+            gs_dq(spec$time), gs_dq(spec$event), by_arg,
+            # The design-based variance is the slow part of svykm(), so it is
+            # asked for only when the band that needs it is drawn.
+            if (isTRUE(spec$km_ci)) ", se = TRUE" else "")
+  } else {
     sprintf("km <- km_data(%s, %s, %s%s)", data_sym, gs_dq(spec$time),
-            gs_dq(spec$event), by_arg),
-    "")
+            gs_dq(spec$event), by_arg)
+  }
+  c(lines, fit, "")
+}
+
+#' The call that estimates a weighted Dot + Error figure's points
+#' @keywords internal
+#' @noRd
+gs_code_svy_summary_call <- function(spec, data_sym = "d", facet_strata = FALSE) {
+  by <- gs_dot_by(spec, facet_strata)
+  args <- c(
+    data_sym, "des", gs_dq(spec$y),
+    if (length(by)) sprintf("by = c(%s)", paste(gs_dq(by), collapse = ", ")),
+    sprintf("bar = %s", gs_dq(spec$err_type)),
+    if (spec$err_type %in% GS_ERR_CI_TYPES) {
+      sprintf("conf = %s", gs_n(spec$err_level))
+    },
+    if (spec$err_type %in% GS_ERR_PROP_TYPES && nzchar(spec$err_event %||% "")) {
+      sprintf("event = %s", gs_dq(spec$err_event))
+    })
+  sprintf("est <- svy_summary(%s)", paste(args, collapse = ", "))
 }
 
 #' The symbol `ggplot()` is handed, which is not the raw data for every type
 #' @keywords internal
 #' @noRd
 gs_plot_sym <- function(spec, data_sym = "d") {
-  if (identical(spec$plot_type, GS_KM)) "km" else data_sym
+  if (identical(spec$plot_type, GS_KM)) return("km")
+  if (identical(spec$plot_type, GS_DOT) && gs_weighted(spec)) return("est")
+  data_sym
 }
 
 #' Preparation and plot together: one complete, evaluable figure
@@ -565,12 +847,19 @@ gs_code_risk_table <- function(spec, data_sym = "d", facet_strata = FALSE) {
   }
   y <- if (nzchar(spec$group)) gs_bt(spec$group) else "\"All\""
   lab_x <- if (nzchar(spec$lab_x)) spec$lab_x else "Time"
+  weighted <- gs_weighted(spec)
 
   lines <- c(
-    sprintf("risk <- km_risk(%s, %s, %s, risk_times%s)", data_sym,
-            gs_dq(spec$time), gs_dq(spec$event), by_arg),
+    if (weighted) {
+      sprintf("risk <- km_risk_weighted(%s, %s, %s, %s, risk_times%s)", data_sym,
+              gs_dq(spec$time), gs_dq(spec$event), gs_dq(spec$weight), by_arg)
+    } else {
+      sprintf("risk <- km_risk(%s, %s, %s, risk_times%s)", data_sym,
+              gs_dq(spec$time), gs_dq(spec$event), by_arg)
+    },
     sprintf("tbl <- ggplot(risk, aes(x = .time, y = %s)) +", y),
-    "  geom_text(aes(label = .nrisk), size = 3.4) +",
+    sprintf("  geom_text(aes(label = %s), size = 3.4) +",
+            if (weighted) ".nrisk_label" else ".nrisk"),
     "  scale_x_continuous(limits = c(risk_min, risk_max), breaks = risk_times) +",
     # A discrete axis puts the first level at the bottom, which would have the
     # rows running against the legend they are read beside.
@@ -580,8 +869,9 @@ gs_code_risk_table <- function(spec, data_sym = "d", facet_strata = FALSE) {
   if (length(facet)) lines <- c(lines, gs_indent(facet))
 
   c(lines,
-    sprintf("  labs(x = %s, y = NULL, title = \"Number at risk\") +",
-            gs_dq(lab_x)),
+    sprintf("  labs(x = %s, y = NULL, title = %s) +", gs_dq(lab_x),
+            gs_dq(if (weighted) "Number at risk (weighted in parentheses)"
+                  else "Number at risk")),
     paste0("  ", spec$theme, " +"),
     "  theme(panel.grid = element_blank())")
 }
@@ -614,6 +904,10 @@ gs_code_plot <- function(spec, data_sym = "d", facet_strata = FALSE,
   if (type == GS_KM) {
     # The axes come from km_data()'s output, not from the raw columns.
     mapping <- c("x = .time", "y = .surv")
+  } else if (type == GS_DOT && gs_weighted(spec)) {
+    # ...and a weighted point and its bar from svy_summary()'s.
+    mapping <- c(sprintf("x = %s", if (nzchar(spec$x)) gs_bt(spec$x) else "\"\""),
+                 "y = .y", "ymin = .ymin", "ymax = .ymax")
   } else if (type %in% GS_XONLY_TYPES) {
     mapping <- c(mapping, sprintf("x = %s", gs_bt(spec$x)))
   } else {
@@ -622,6 +916,9 @@ gs_code_plot <- function(spec, data_sym = "d", facet_strata = FALSE,
     mapping <- c(mapping,
                  sprintf("x = %s", if (nzchar(spec$x)) gs_bt(spec$x) else "\"\""))
     mapping <- c(mapping, sprintf("y = %s", gs_y_expr(spec)))
+  }
+  if (gs_weighted(spec) && type %in% GS_WEIGHT_AES_TYPES) {
+    mapping <- c(mapping, sprintf("weight = %s", gs_bt(spec$weight)))
   }
   if (has_group) {
     mapping <- c(mapping, sprintf("%s = %s", grp_aes, gs_bt(spec$group)))
@@ -635,7 +932,7 @@ gs_code_plot <- function(spec, data_sym = "d", facet_strata = FALSE,
                    paste(mapping, collapse = ", "))
 
   # --- geoms ---
-  lines <- c(lines, gs_indent(gs_code_geoms(spec)))
+  lines <- c(lines, gs_indent(gs_code_geoms(spec, data_sym)))
 
   # --- palette ---
   scales <- gs_code_scales(spec, grp_aes, has_group)
@@ -710,7 +1007,7 @@ gs_y_expr <- function(spec) {
 #' Geom layers for a plot type, each on its own line ending in " +"
 #' @keywords internal
 #' @noRd
-gs_code_geoms <- function(spec) {
+gs_code_geoms <- function(spec, data_sym = "d") {
   type <- spec$plot_type
   alpha <- gs_n(spec$alpha)
   bw <- spec$binwidth
@@ -749,9 +1046,19 @@ gs_code_geoms <- function(spec) {
     # A fixed, local seed means that changing a cosmetic setting (such as
     # opacity) does not make observations appear to move. position_jitter()
     # restores the caller's random-number state after calculating offsets.
-    out <- c(out, paste0(
-      "geom_point(position = position_jitter(width = 0.2, height = 0, ",
-      "seed = 1), alpha = 0.4)"))
+    jitter <- "position = position_jitter(width = 0.2, height = 0, seed = 1), alpha = 0.4"
+    out <- c(out, if (identical(type, GS_DOT) && gs_weighted(spec)) {
+      # The figure is drawn from the estimates, so the observations have to be
+      # handed back in, with their own aesthetics: the estimates' ymin and
+      # ymax are not columns of the data.
+      obs <- c(sprintf("x = %s", if (nzchar(spec$x)) gs_bt(spec$x) else "\"\""),
+               sprintf("y = %s", gs_y_expr(spec)),
+               if (nzchar(spec$group)) sprintf("colour = %s", gs_bt(spec$group)))
+      sprintf("geom_point(data = %s, aes(%s), inherit.aes = FALSE, %s)",
+              data_sym, paste(obs, collapse = ", "), jitter)
+    } else {
+      sprintf("geom_point(%s)", jitter)
+    })
   }
   # The smoother goes on top of whatever it is smoothing.
   out <- c(out, gs_code_smooth(spec))
@@ -797,8 +1104,15 @@ gs_code_line_geoms <- function(spec, alpha) {
 #' @noRd
 gs_code_smooth <- function(spec) {
   if (!isTRUE(spec$smooth)) return(character())
-  sprintf("geom_smooth(method = \"loess\", formula = y ~ x, span = %s, se = %s)",
-          gs_n(spec$smooth_span),
+  # The weight is mapped here rather than on the figure: the points and lines
+  # under the smoother are one row each whatever the row stands for.
+  weight <- if (gs_weighted(spec)) {
+    sprintf("aes(weight = %s), ", gs_bt(spec$weight))
+  } else {
+    ""
+  }
+  sprintf("geom_smooth(%smethod = \"loess\", formula = y ~ x, span = %s, se = %s)",
+          weight, gs_n(spec$smooth_span),
           if (isTRUE(spec$smooth_se)) "TRUE" else "FALSE")
 }
 
@@ -1026,6 +1340,18 @@ gs_code_labs <- function(spec, grp_aes, has_group, title_expr = NULL,
   # what the figure does rather than what it shows.
   lab_y <- if (nzchar(spec$lab_y)) {
     spec$lab_y
+  } else if (identical(type, GS_DOT) && gs_weighted(spec)) {
+    # Left to itself this axis would read `.y`.
+    if (spec$err_type %in% GS_ERR_PROP_TYPES && nzchar(spec$err_event %||% "")) {
+      sprintf("Weighted proportion %s = %s", spec$y, spec$err_event)
+    } else if (spec$err_type %in% GS_ERR_PROP_TYPES) {
+      sprintf("Weighted proportion of %s", spec$y)
+    } else {
+      sprintf("Weighted mean of %s", spec$y)
+    }
+  } else if (identical(type, "Histogram") && gs_weighted(spec)) {
+    # A bin's height is now a sum of weights, not a number of rows.
+    "Weighted count"
   } else if (identical(type, GS_DOT) && spec$err_type %in% GS_ERR_PROP_TYPES &&
              nzchar(spec$err_event %||% "")) {
     sprintf("Proportion %s = %s", spec$y, spec$err_event)
@@ -1092,7 +1418,7 @@ gs_code_script <- function(spec, stratum = NULL, note = NULL) {
   strat <- spec$strat_vars[nzchar(spec$strat_vars)]
   lv <- gs_stratum_levels(stratum, strat, spec$strat_mode)
   title <- if (!is.null(stratum) && nrow(stratum)) {
-    gs_title_literal(spec, stratum$file[1L], stratum$n[1L])
+    gs_title_literal(spec, stratum$file[1L], stratum$n[1L], stratum$n_w[1L])
   } else {
     NULL
   }
@@ -1102,14 +1428,15 @@ gs_code_script <- function(spec, stratum = NULL, note = NULL) {
   # A plain figure needs none of the three, and is better off as ggplot2 code
   # a reader can lift without taking a dependency with it.
   needs_dt <- length(gs_as_cuts(spec$cuts)) > 0L ||
-    length(gs_layer_vars(spec)) > 0L
+    length(gs_exclude_vars(spec)) > 0L
 
   header <- c(
     "# ---------------------------------------------------------------------",
     "# Generated by ggstratify",
     "# The ggplot2 code for the figure shown on the Plot tab.",
     if (!is.null(stratum) && nrow(stratum)) {
-      sprintf("# Figure: %s (N = %d)", stratum$label[1L], stratum$n[1L])
+      paste0("# Figure: ", gs_label_n(stratum$label[1L], stratum$n[1L],
+                                      stratum$n_w[1L]))
     },
     if (!is.null(note)) paste0("# ", note),
     "# ---------------------------------------------------------------------",
@@ -1133,6 +1460,7 @@ gs_code_script <- function(spec, stratum = NULL, note = NULL) {
     sprintf("dt <- as.data.table(%s)   # <- your data", spec$data_name),
     "",
     gs_code_cuts(spec$cuts, "dt"),
+    gs_code_design(spec, "dt"),
     gs_code_layer_na(spec, "dt")
   )
 
@@ -1200,13 +1528,14 @@ gs_stratum_levels <- function(row, strat_vars, mode = "independent") {
 #' @param spec A spec list.
 #' @param label The stratum's name, used when the user typed no title.
 #' @param n The stratum size, or `NULL` to leave the size off.
+#' @param n_w The stratum's sum of weights, or `NULL` for an unweighted figure.
 #' @return A quoted string literal, or `NULL` when there is no title.
 #' @keywords internal
 #' @noRd
-gs_title_literal <- function(spec, label = "", n = NULL) {
+gs_title_literal <- function(spec, label = "", n = NULL, n_w = NULL) {
   base <- if (nzchar(spec$title)) spec$title else label
   if (!nzchar(base)) return(NULL)
-  gs_dq(if (isTRUE(spec$show_n) && !is.null(n)) gs_label_n(base, n) else base)
+  gs_dq(if (isTRUE(spec$show_n) && !is.null(n)) gs_label_n(base, n, n_w) else base)
 }
 
 #' Evaluate generated plot code against a data.table
@@ -1220,15 +1549,18 @@ gs_title_literal <- function(spec, label = "", n = NULL) {
 #' @param code_lines Output of `gs_code_figure()`.
 #' @param data The data to bind to the code's data symbol.
 #' @param data_sym The symbol name used when the code was generated.
+#' @param design The survey design a design-based figure reads as `des`, from
+#'   `gs_build_design()`; `NULL` for every other figure.
 #' @return A `ggplot` object.
 #' @keywords internal
 #' @noRd
-gs_eval_plot <- function(code_lines, data, data_sym = "d") {
+gs_eval_plot <- function(code_lines, data, data_sym = "d", design = NULL) {
   # The package namespace, not ggplot2's: the generated code is written for a
   # session that has attached both ggplot2 and data.table, and data.table
   # quietly falls back to data.frame semantics when it is called from a
   # namespace that does not import it.
   env <- new.env(parent = asNamespace("ggstratify"))
   assign(data_sym, data, envir = env)
+  if (!is.null(design)) assign("des", design, envir = env)
   eval(parse(text = paste(code_lines, collapse = "\n")), envir = env)
 }

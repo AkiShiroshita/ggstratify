@@ -701,7 +701,8 @@ test_that("the UI builds and carries every control the server reads", {
                "layer_summary", "xlim_min", "xlim_max", "ylim_min",
                "ylim_max", "cut_unit", "cut_season_start", "x_time_unit",
                "x_time_every", "x_time_labels", "err_type", "err_level",
-               "tick_angle_x", "tick_angle_y", "err_event")) {
+               "tick_angle_x", "tick_angle_y", "err_event", "weight",
+               "design_strata", "design_cluster")) {
     expect_true(grepl(id, ui, fixed = TRUE), info = id)
   }
 })
@@ -712,8 +713,9 @@ test_that("every selector opens on nothing chosen", {
   choices <- gs_selector_choices(gs_classify_vars(gs_prepare_data(epi_cohort)))
 
   expect_setequal(names(choices),
-                  c("yvar", "xvar", "group", "idvar", "facet", "timevar",
-                    "eventvar", "cut_var"))
+                  c("yvar", "xvar", "group", "idvar", "weight",
+                    "design_strata", "design_cluster", "facet",
+                    "timevar", "eventvar", "cut_var"))
   for (id in names(choices)) {
     expect_equal(choices[[id]][1], GS_NONE, info = id)
   }
@@ -1152,5 +1154,54 @@ test_that("an outcome kept as a factor is described without being recoded first"
     session$elapse(500)
     expect_equal(spec_r()$err_event, "Survived")
     expect_match(output$code, 'outcome == "Survived"', fixed = TRUE)
+  })
+})
+
+test_that("a survey weight reaches the counts, the figure and the code", {
+  cohort <- data.table::as.data.table(epi_cohort)
+  set.seed(3)
+  cohort[, svy_w := round(stats::runif(.N, 0.5, 40), 2)]
+  cohort[1:4, svy_w := NA]
+
+  shiny::testServer(gs_server(cohort, "cohort"), {
+    do.call(session$setInputs, gs_test_inputs(tempdir()))
+    session$setInputs(plot_type = "Histogram", yvar = "age", strat_vars = "sex",
+                      jitter = FALSE, data_name = "cohort", weight = "svy_w")
+    session$elapse(500)
+
+    expect_length(problems(), 0L)
+    expect_true("svy_w" %in% gs_selector_choices(info())$weight)
+    # The rows with no weight are left out of every count, and said to be.
+    miss <- missing_report()
+    expect_equal(miss$n_missing[miss$var == "svy_w"], 4L)
+    expect_equal(sum(strata()$n), nrow(cohort) - 4L)
+    expect_equal(sum(strata()$n_w), sum(cohort$svy_w, na.rm = TRUE))
+    expect_match(output$strata_table, "Weighted N", fixed = TRUE)
+
+    expect_match(output$code, "aes(x = age, weight = svy_w)", fixed = TRUE)
+    expect_match(output$code, "; weighted N = ", fixed = TRUE)
+    expect_no_error(output$plot)
+
+    session$setInputs(plot_type = "Dot + Error", yvar = "bmi",
+                      xvar = "treatment", err_type = "normal")
+    session$elapse(500)
+    expect_length(problems(), 0L)
+    expect_match(output$code, 'svy_summary(d, des, "bmi"', fixed = TRUE)
+    expect_no_error(output$plot)
+
+    # The strata reach the design, in the code and on screen.
+    session$setInputs(design_strata = "site")
+    session$elapse(500)
+    expect_length(problems(), 0L)
+    expect_match(output$code,
+                 "survey::svydesign(ids = ~1, strata = ~site, weights = ~svy_w",
+                 fixed = TRUE)
+    expect_s3_class(svy_design(), "survey.design2")
+    expect_no_error(output$plot)
+
+    # A dotplot cannot be weighted, and says so rather than drawing unweighted.
+    session$setInputs(plot_type = "Dotplot")
+    session$elapse(500)
+    expect_match(problems(), "cannot carry a survey weight", all = FALSE)
   })
 })

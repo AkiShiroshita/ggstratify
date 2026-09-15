@@ -61,7 +61,29 @@ gs_ui <- function() {
             )
           ),
           shiny::selectInput("group", "Group (colour by this variable)",
-                             choices = NULL)
+                             choices = NULL),
+          shiny::selectInput("weight", "Survey weight", choices = NULL),
+          shiny::conditionalPanel(
+            condition = gs_js_weighted(),
+            shiny::selectInput("design_strata", "Sampling strata",
+                               choices = NULL),
+            shiny::selectInput("design_cluster",
+                               "Clusters (primary sampling units)",
+                               choices = NULL),
+            shiny::helpText(
+              "Each row counts for as many people as its weight. Histograms,",
+              "densities, boxplots and violins are drawn from the weighted",
+              "data, and a smoother is fitted with the weights.",
+              "The bar on a Dot + Error figure and the band on a Kaplan-Meier",
+              "curve are design-based estimates from the survey package, with",
+              "the sampling strata and clusters above when they are given.",
+              "A cluster ID is read within its stratum, and every panel and",
+              "figure is a subpopulation of the whole sample's design.",
+              "N is shown twice: the rows, and the sum of their weights.",
+              "Rows with no weight, stratum or cluster are excluded, and",
+              "counted. A dotplot cannot be weighted."
+            )
+          )
         ),
 
         bslib::accordion_panel(
@@ -208,8 +230,20 @@ gs_ui <- function() {
               condition = "input.smooth == true",
               shiny::sliderInput("smooth_span", "Smoother span (larger = smoother)",
                                  min = 0.1, max = 1, value = 0.75, step = 0.05),
-              shiny::checkboxInput("smooth_se", "Show the smoother's 95% band",
-                                   FALSE),
+              shiny::conditionalPanel(
+                condition = paste0("!(", gs_js_weighted(), ")"),
+                shiny::checkboxInput("smooth_se", "Show the smoother's 95% band",
+                                     FALSE)
+              ),
+              shiny::conditionalPanel(
+                condition = gs_js_weighted(),
+                shiny::helpText(
+                  "The smoother is fitted with the survey weight. Its band is",
+                  "not offered: loess reads a weight as the precision of an",
+                  "observation, so the band would not be a design-based",
+                  "interval."
+                )
+              ),
               shiny::helpText(
                 "Drawn with a grouping variable, the smoother is fitted",
                 "separately within each group."
@@ -501,6 +535,13 @@ gs_js_km <- function() gs_js_type(GS_KM)
 #' @keywords internal
 #' @noRd
 gs_js_not_km <- function() paste0("input.plot_type != ", gs_js_str(GS_KM))
+
+#' conditionalPanel() condition: a survey weight is set
+#' @keywords internal
+#' @noRd
+gs_js_weighted <- function() {
+  paste0("input.weight && input.weight != ", gs_js_str(GS_NONE))
+}
 
 #' conditionalPanel() condition: at least one variable splits the figures
 #' @keywords internal

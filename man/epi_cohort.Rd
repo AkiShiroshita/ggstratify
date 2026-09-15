@@ -5,7 +5,7 @@
 \alias{epi_cohort}
 \title{A synthetic clinical cohort}
 \format{
-A data frame with 600 rows and 12 columns:
+A data frame with 600 rows and 13 columns:
 \describe{
 \item{id}{Patient identifier, \code{"P0001"} to \code{"P0600"}.}
 \item{age}{Age in years.}
@@ -23,6 +23,9 @@ by dropout or by the end of the study at 365 days.}
 \item{death}{\code{1} if the patient died during follow-up, \code{0} if censored.}
 \item{admit_date}{Date of admission, over 2021 to 2023. Moderate and
 severe cases cluster in the winter, mild ones in the summer.}
+\item{svy_weight}{Survey weight: the number of admissions each patient
+stands for, larger for the under-sampled mild presentations. Sums to
+about 50,000.}
 }
 }
 \source{
@@ -61,6 +64,14 @@ be used as a layer like any other. The seasonality is in the case mix rather
 than in the number of admissions: moderate and severe presentations cluster
 in the winter and mild ones spread into the summer, so a season carries a
 real difference in \code{crp} and in \code{los_days} rather than noise.
+
+\code{svy_weight} is the fifth. It reads the cohort as a sample of some 50,000
+admissions in which severe presentations were over-sampled and mild ones
+under-sampled, and gives each patient the number of admissions they stand
+for. Set it as the survey weight and the weighted cohort is mostly mild, as
+the admissions were: a weighted mean of \code{crp} and a weighted proportion of
+\code{death} come out below the unweighted ones. \code{site} can serve as the
+sampling strata to try those controls with it.
 
 \code{fu_days} and \code{death} make the data usable for a Kaplan-Meier curve, \code{age}
 for the methods that cut a continuous variable into groups, \code{crp} for the

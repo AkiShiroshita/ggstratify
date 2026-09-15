@@ -107,6 +107,24 @@ through \code{\link[ggplot2:geom_smooth]{ggplot2::geom_smooth()}} -- with its sp
 when a grouping variable is set, one fit per group.
 }
 
+\section{Survey weights}{
+
+
+Under \strong{Describe}, \strong{Survey weight} takes a numeric column that is never
+negative. Each row then counts for as many people as its weight: a
+histogram, density, boxplot or violin is drawn through \code{ggplot2}'s \code{weight}
+aesthetic, and a smoother is fitted with the weights. Every count is
+reported twice, as the rows a figure is drawn from and as the sum of their
+weights. The bar on a \emph{Dot + Error} figure and the band on a \emph{Kaplan-Meier
+curve} are design-based estimates from \code{\link[survey:svymean]{survey::svymean()}},
+\code{\link[survey:svyciprop]{survey::svyciprop()}} and \code{\link[survey:svykm]{survey::svykm()}}. \strong{Sampling strata} and
+\strong{Clusters} complete the design, with a cluster ID read within its stratum;
+the design is built over the whole sample, and every panel and figure is a
+subpopulation of it. A dotplot cannot be weighted, and rows with no weight,
+stratum or cluster are excluded and counted. \code{svy_weight} in \link{epi_cohort}
+is a weight to try this on.
+}
+
 \section{Before you start}{
 
 

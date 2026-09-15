@@ -219,20 +219,38 @@ gs_server <- function(dataset, data_name = "mydata") {
       millis = 300
     )
 
-    problems <- shiny::reactive(gs_validate_spec(spec_r(), info()))
+    problems <- shiny::reactive({
+      spec <- spec_r()
+      probs <- gs_validate_spec(spec, info())
+      # Asked of the rows rather than of the classification, and only once the
+      # selection itself is valid.
+      if (!length(probs)) probs <- gs_validate_design(dat(), spec)
+      probs
+    })
 
     # --- the layers ----------------------------------------------------------
 
     # Every figure is drawn from rows that say which figure they belong to.
     # Excluding them here, once, is what keeps the n on the Strata tab, the n
     # in the title and the rows in the figure the same number.
+    # A row with no weight, stratum or cluster is excluded first, and the
+    # survey design is built over what is left -- before the layer rows go,
+    # because a panel is a subpopulation of the whole sample's design.
+    design_data <- shiny::reactive(gs_design_data(dat(), spec_r()))
+
     layer_data <- shiny::reactive({
-      dt <- dat()
+      dt <- design_data()
       dt[gs_complete_layers(dt, gs_layer_vars(spec_r()))]
     })
 
+    svy_design <- shiny::reactive({
+      spec <- spec_r()
+      if (!gs_uses_design(spec) || length(problems())) return(NULL)
+      gs_build_design(design_data(), spec)
+    })
+
     missing_report <- shiny::reactive({
-      gs_missing_report(dat(), gs_layer_vars(spec_r()))
+      gs_missing_report(dat(), gs_exclude_vars(spec_r()))
     })
 
     output$layer_summary <- shiny::renderUI({
@@ -265,7 +283,8 @@ gs_server <- function(dataset, data_name = "mydata") {
 
     strata <- shiny::reactive({
       spec <- spec_r()
-      gs_strata_table(layer_data(), spec$strat_vars, spec$min_n, spec$strat_mode)
+      gs_strata_table(layer_data(), spec$strat_vars, spec$min_n, spec$strat_mode,
+                      spec$weight)
     })
 
     # updateSelectInput() moves the box back to its first choice, and strata()
@@ -365,18 +384,20 @@ gs_server <- function(dataset, data_name = "mydata") {
       shiny::validate(shiny::need(!length(probs), paste(probs, collapse = "\n")))
 
       spec <- spec_r()
-      cols <- gs_spec_cols(spec)
+      cols <- intersect(gs_data_cols(spec), names(dt))
 
       if (facet_preview()) {
         long <- gs_long_strata(dt, spec$strat_vars, cols, spec$min_n,
-                               spec$strat_mode, label_n = spec$show_n)
+                               spec$strat_mode, label_n = spec$show_n,
+                               weight = spec$weight)
         shiny::validate(shiny::need(
           nrow(long) > 0,
           "No stratum reaches the minimum n. Lower it, or pick another variable."
         ))
         long <- gs_downsample(long, spec, isTRUE(input$sample_big),
                               by = ".strat_label")
-        gs_eval_plot(gs_code_figure(spec, "d", facet_strata = TRUE), long)
+        gs_eval_plot(gs_code_figure(spec, "d", facet_strata = TRUE), long,
+                     design = svy_design())
       } else {
         row <- current_stratum()
         d <- dt
@@ -385,11 +406,13 @@ gs_server <- function(dataset, data_name = "mydata") {
           d <- gs_one_stratum(dt, spec, row)
           # n comes from the strata table, so it reports the true stratum size
           # even when the preview itself is drawn from a subsample.
-          title <- gs_title_literal(spec, row$file[1L], row$n[1L])
+          title <- gs_title_literal(spec, row$file[1L], row$n[1L],
+                                    row$n_w[1L])
         }
         d <- if (length(cols)) d[, cols, with = FALSE] else d
         d <- gs_downsample(d, spec, isTRUE(input$sample_big))
-        gs_eval_plot(gs_code_figure(spec, "d", title_expr = title), d)
+        gs_eval_plot(gs_code_figure(spec, "d", title_expr = title), d,
+                     design = svy_design())
       }
     }, res = GS_PREVIEW_RES) |>
       # The data cannot change under the app, so the spec -- which carries the
@@ -450,14 +473,18 @@ gs_server <- function(dataset, data_name = "mydata") {
       # name listed here is the name that appears on disk.
       names <- paste0(gs_file_stem(gs_export_prefix(spec), st$file),
                       ".", spec$format)
-      data.frame(
+      out <- data.frame(
         Variable = st$var,
         Level = st$level,
         N = st$n,
-        `File name` = ifelse(st$keep, names, "-"),
         check.names = FALSE,
         stringsAsFactors = FALSE
       )
+      # Beside the N rather than instead of it: the rows are what the figure
+      # is drawn from, the weights what it stands for.
+      if (!is.null(st$n_w)) out[["Weighted N"]] <- gs_format_weighted_n(st$n_w)
+      out[["File name"]] <- ifelse(st$keep, names, "-")
+      out
     }, striped = TRUE, spacing = "xs", rownames = FALSE, digits = 0)
 
     # --- generated code -----------------------------------------------------
@@ -501,6 +528,8 @@ gs_server <- function(dataset, data_name = "mydata") {
 
       prefix <- gs_export_prefix(spec)
       dt_list <- gs_split_strata(dt, spec)
+      # One design for every file: each figure is a subpopulation of it.
+      des <- svy_design()
       st <- strata()
       n_skipped <- if (nrow(st)) sum(!st$keep) else 0L
 
@@ -523,11 +552,13 @@ gs_server <- function(dataset, data_name = "mydata") {
         Map(function(d, nm) {
           stem <- gs_file_stem(prefix, nm)
           title <- if (nzchar(nm)) {
-            gs_title_literal(spec, gs_safe_name(nm), nrow(d))
+            gs_title_literal(spec, gs_safe_name(nm), nrow(d),
+                             if (gs_weighted(spec)) sum(d[[spec$weight]]))
           } else {
             NULL
           }
-          p <- gs_eval_plot(gs_code_figure(spec, "d", title_expr = title), d)
+          p <- gs_eval_plot(gs_code_figure(spec, "d", title_expr = title), d,
+                            design = des)
           ggplot2::ggsave(file.path(outdir, paste0(stem, ext)), plot = p,
                           width = spec$width, height = spec$height,
                           dpi = spec$dpi, device = device)

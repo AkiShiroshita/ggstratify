@@ -91,6 +91,20 @@ GS_XY_TYPES <- c("Line", "Scatter")
 # nothing summarised in between, which is what a smoother has to have.
 GS_SMOOTH_TYPES <- c("Line", "Scatter")
 
+# Plot types that read a survey weight through ggplot2's own `weight`
+# aesthetic: a bin, a density or a box is a summary of the rows, and a weighted
+# summary is the same summary with each row counted as many times as its
+# weight. Dot + Error and the Kaplan-Meier curve are weighted too, but through
+# the survey package, because their bars and bands are design-based intervals
+# rather than summaries; a Scatter or Line figure is weighted only in its
+# smoother, since a point is one row whatever its weight.
+GS_WEIGHT_AES_TYPES <- c("Boxplot", "Density", "Histogram", "Violin")
+
+# The one type that cannot carry a weight at all. A dotplot draws one dot per
+# row, and ggplot2 refuses a weight that is not a whole number rather than
+# drawing a fraction of a dot.
+GS_UNWEIGHTED_TYPES <- "Dotplot"
+
 # The ways a column can be turned into another one. The first three read a
 # continuous variable's values; the fourth reads only whether there is a value
 # at all, so it applies to a column of any type; the fifth reads a date or a
@@ -259,6 +273,14 @@ gs_spec <- function(...) {
     # from the classified data; FALSE is the safe default for a spec built by
     # hand, because a discrete scale is what a categorical group needs.
     group_continuous = FALSE,
+    # A survey weight: a numeric column, never negative. Blank is the
+    # unweighted figure the package has always drawn.
+    weight      = "",
+    # The rest of the survey design, read only when a weight is set: the
+    # sampling strata and the clusters (primary sampling units). Blank is a
+    # design with neither.
+    design_strata  = "",
+    design_cluster = "",
     facet       = "",             # the facet_wrap layer: one figure, many panels
     strat_vars  = character(),    # the outer layers: one figure each
     strat_mode  = "independent",  # "independent" | "crossed"
@@ -359,6 +381,82 @@ gs_tick_angle <- function(x) {
 gs_layer_vars <- function(spec) {
   v <- c(spec$strat_vars, spec$facet)
   unique(v[nzchar(v)])
+}
+
+#' Is the figure weighted?
+#' @keywords internal
+#' @noRd
+gs_weighted <- function(spec) nzchar(spec$weight %||% "")
+
+#' Every variable a row has to have a value for to be drawn at all
+#'
+#' The layer variables, and the survey weight: a row with no weight counts for
+#' an unknown amount, which is not the same as counting for nothing, so it is
+#' excluded -- and counted -- in the same place and the same way as a row that
+#' does not say which panel it belongs to.
+#' @keywords internal
+#' @noRd
+gs_exclude_vars <- function(spec) {
+  unique(c(gs_layer_vars(spec), gs_design_vars(spec)))
+}
+
+#' The variables that describe how the survey was sampled
+#'
+#' The weight, the sampling strata and the clusters. A row missing any of them
+#' cannot be placed in the design, and is excluded -- and counted -- before the
+#' design is built.
+#' @keywords internal
+#' @noRd
+gs_design_vars <- function(spec) {
+  if (!gs_weighted(spec)) return(character())
+  v <- c(spec$weight, spec$design_strata %||% "", spec$design_cluster %||% "")
+  unique(v[nzchar(v)])
+}
+
+#' Does the figure need a survey design object, not only a weight column?
+#'
+#' A Dot + Error bar and a Kaplan-Meier curve are estimated by the survey
+#' package; every other figure reads the weight through ggplot2's aesthetic
+#' and has no use for the strata or the clusters.
+#' @keywords internal
+#' @noRd
+gs_uses_design <- function(spec) {
+  gs_weighted(spec) && spec$plot_type %in% c(GS_DOT, GS_KM)
+}
+
+#' Does the figure estimate a variance from the design?
+#'
+#' A Dot + Error bar always does; a survival curve only when its band is drawn.
+#' It is the variance, not the point estimate, that a stratum with a single
+#' cluster makes impossible.
+#' @keywords internal
+#' @noRd
+gs_needs_variance <- function(spec) {
+  gs_uses_design(spec) &&
+    (identical(spec$plot_type, GS_DOT) || isTRUE(spec$km_ci))
+}
+
+#' The columns the survey design object is built from
+#'
+#' The design variables, plus the ones the estimates read out of the design:
+#' the Y variable, or a survival curve's time and event. `.svy_row` is the
+#' position of each row in the design, which is how a figure's rows find
+#' themselves in it.
+#' @keywords internal
+#' @noRd
+gs_design_cols <- function(spec) {
+  v <- c(gs_design_vars(spec), spec$y, spec$time, spec$event, ".svy_row")
+  unique(v[nzchar(v)])
+}
+
+#' The columns a figure is evaluated against
+#'
+#' What the spec reads, plus the row position a design-based figure uses to
+#' find its rows in the design.
+#' @keywords internal
+#' @noRd
+gs_data_cols <- function(spec) {
+  c(gs_spec_cols(spec), if (gs_uses_design(spec)) ".svy_row")
 }
 
 #' The variables the figure itself reads
@@ -471,6 +569,16 @@ gs_normalize_spec <- function(spec) {
   level <- gs_num(spec$err_level, 0.95)
   spec$err_level <- if (is.na(level) || level <= 0 || level >= 1) 0.95 else level
   if (!spec$plot_type %in% GS_SMOOTH_TYPES) spec$smooth <- FALSE
+  # loess reads a weight as the precision of an observation, not as the number
+  # of people it stands for, so the band it draws around a weighted fit is not
+  # a design-based interval. The UI hides the box while a weight is set.
+  if (gs_weighted(spec)) spec$smooth_se <- FALSE
+  # Strata and clusters describe how a weighted sample was drawn, and mean
+  # nothing without the weight; the UI hides them while there is none.
+  if (!gs_weighted(spec)) {
+    spec$design_strata <- ""
+    spec$design_cluster <- ""
+  }
   spec$tick_angle_x <- gs_tick_angle(spec$tick_angle_x)
   spec$tick_angle_y <- gs_tick_angle(spec$tick_angle_y)
   if (!spec$strat_mode %in% GS_STRAT_MODES) spec$strat_mode <- "independent"
@@ -504,6 +612,9 @@ gs_spec_from_input <- function(input, x_time_class = "", err_event = "") {
     event      = none(input$eventvar),
     id         = none(input$idvar),
     group      = none(input$group),
+    weight     = none(input$weight),
+    design_strata  = none(input$design_strata),
+    design_cluster = none(input$design_cluster),
     facet      = none(input$facet),
     strat_vars = input$strat_vars %||% character(),
     strat_mode = input$strat_mode %||% "independent",
@@ -565,7 +676,8 @@ gs_spec_from_input <- function(input, x_time_class = "", err_event = "") {
 #' @noRd
 gs_spec_cols <- function(spec) {
   # `id` is blank for every type but Line, so it needs no test of its own.
-  cols <- c(spec$x, spec$y, spec$group, spec$facet, spec$id)
+  cols <- c(spec$x, spec$y, spec$group, spec$facet, spec$id, spec$weight %||% "",
+            spec$design_strata %||% "", spec$design_cluster %||% "")
   if (identical(spec$plot_type, GS_KM)) cols <- c(spec$time, spec$event, cols)
   unique(cols[nzchar(cols)])
 }
@@ -594,6 +706,8 @@ gs_validate_spec <- function(spec, info = NULL) {
   # the ones inside the range, so a backwards range leaves the table with no
   # columns at all.
   problems <- c(problems, gs_validate_limits(spec))
+  # And so is the weight, which every type but one reads.
+  problems <- c(problems, gs_validate_weight(spec, info))
 
   if (type == GS_KM) {
     if (!nzchar(spec$time)) {
@@ -684,6 +798,80 @@ gs_validate_limits <- function(spec) {
   }
   c(one(spec$xlim_min, spec$xlim_max, "X"),
     one(spec$ylim_min, spec$ylim_max, "Y"))
+}
+
+#' A survey weight that cannot be used
+#'
+#' Refused rather than dropped: a figure drawn unweighted under a weight the
+#' user chose would be a different description from the one on the screen,
+#' with nothing to say so.
+#' @keywords internal
+#' @noRd
+gs_validate_weight <- function(spec, info = NULL) {
+  if (!gs_weighted(spec)) return(character())
+  if (spec$plot_type %in% GS_UNWEIGHTED_TYPES) {
+    return(sprintf(paste0(
+      "A %s draws one dot per row, so it cannot carry a survey weight. ",
+      "Clear the weight, or use a Histogram or a Boxplot instead."),
+      spec$plot_type))
+  }
+  if (!is.null(info) && nrow(info) && !spec$weight %in% gs_vars_of(info, "weight")) {
+    return(sprintf(paste0(
+      "The survey weight must be a number that is never negative; '%s' is ",
+      "not."), spec$weight))
+  }
+  if (nzchar(spec$design_strata %||% "") &&
+      identical(spec$design_strata, spec$design_cluster)) {
+    return(sprintf(paste0(
+      "'%s' cannot be both the sampling strata and the clusters. A stratum is ",
+      "a group sampled separately; a cluster is one unit sampled within it."),
+      spec$design_strata))
+  }
+  character()
+}
+
+#' A survey design whose variance cannot be estimated
+#'
+#' A stratum that holds a single cluster has no second cluster to measure the
+#' spread between clusters against, and survey stops with "Stratum has only
+#' one PSU" when it is asked for a variance. Reported here, by name, with what
+#' to do about it, rather than as that error from inside the figure. Only a
+#' figure that estimates a variance is refused: a survival curve without its
+#' band needs none.
+#'
+#' Checked against the data, not the classification, because it is a question
+#' about how the rows fall into strata and clusters.
+#' @param dt The data, before any row is set aside.
+#' @keywords internal
+#' @noRd
+gs_validate_design <- function(dt, spec) {
+  if (!gs_needs_variance(spec)) return(character())
+  strata <- spec$design_strata %||% ""
+  cluster <- spec$design_cluster %||% ""
+  if (!nzchar(strata) && !nzchar(cluster)) return(character())
+  if (!all(gs_design_vars(spec) %in% names(dt))) return(character())
+
+  d <- dt[gs_complete_layers(dt, gs_design_vars(spec))]
+  psu <- if (nzchar(cluster)) as.character(d[[cluster]]) else as.character(seq_len(nrow(d)))
+  s <- if (nzchar(strata)) as.character(d[[strata]]) else rep("", nrow(d))
+  # Counted within each stratum, as nest = TRUE reads a cluster ID.
+  n_psu <- vapply(split(psu, s), function(x) length(unique(x)), integer(1L))
+  lonely <- names(n_psu)[n_psu < 2L]
+  if (!length(lonely)) return(character())
+
+  if (!nzchar(strata)) {
+    return(sprintf(paste0(
+      "'%s' has only one cluster, so a variance between clusters cannot be ",
+      "estimated."), cluster))
+  }
+  sprintf(paste0(
+    "Sampling stratum %s of '%s' %s only one %s, so the variance within it ",
+    "cannot be estimated. Merge %s with a neighbouring stratum before calling ",
+    "ggstratify()."),
+    paste(sprintf("'%s'", lonely), collapse = ", "), strata,
+    if (length(lonely) == 1L) "has" else "have",
+    if (nzchar(cluster)) "cluster" else "row",
+    if (length(lonely) == 1L) "it" else "each")
 }
 
 #' The type checks that only a Kaplan-Meier curve needs

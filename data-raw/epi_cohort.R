@@ -79,6 +79,20 @@ month_end <- as.Date(sprintf("%d-%02d-01",
                              ifelse(admit_month == 12L, 1L, admit_month + 1L)))
 admit_date <- month_start + floor(runif(n) * as.numeric(month_end - month_start))
 
+# A survey weight, for the survey-weight controls. Read the cohort as a sample
+# of some 50,000 admissions in which severe presentations were over-sampled
+# and mild ones under-sampled: of the admissions, about 85% were mild, 14%
+# moderate and 1% severe, against 60%, 37% and 3% in the sample. Each patient
+# stands for as many admissions as the inverse of the chance a patient of that
+# severity had of being sampled, so the weighted cohort is mostly mild, as the
+# admissions are, and a weighted mean of CRP or a weighted proportion of deaths
+# is visibly lower than the unweighted one. A little further variation stands
+# in for a non-response adjustment, so that no two weights are forced equal.
+#
+# Drawn last, for the reason the blocks above give.
+base_weight <- c(Mild = 118, Moderate = 31.5, Severe = 27.8)[severity]
+svy_weight <- round(unname(base_weight) * exp(rnorm(n, 0, 0.15)), 1)
+
 epi_cohort <- data.frame(
   id = sprintf("P%04d", seq_len(n)),
   age = age,
@@ -92,6 +106,7 @@ epi_cohort <- data.frame(
   fu_days = pmax(round(pmin(t_event, t_cens)), 1),
   death = as.integer(t_event <= t_cens),
   admit_date = admit_date,
+  svy_weight = svy_weight,
   stringsAsFactors = FALSE
 )
 

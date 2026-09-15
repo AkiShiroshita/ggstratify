@@ -29,12 +29,20 @@
 #' in the winter and mild ones spread into the summer, so a season carries a
 #' real difference in `crp` and in `los_days` rather than noise.
 #'
+#' `svy_weight` is the fifth. It reads the cohort as a sample of some 50,000
+#' admissions in which severe presentations were over-sampled and mild ones
+#' under-sampled, and gives each patient the number of admissions they stand
+#' for. Set it as the survey weight and the weighted cohort is mostly mild, as
+#' the admissions were: a weighted mean of `crp` and a weighted proportion of
+#' `death` come out below the unweighted ones. `site` can serve as the
+#' sampling strata to try those controls with it.
+#'
 #' `fu_days` and `death` make the data usable for a Kaplan-Meier curve, `age`
 #' for the methods that cut a continuous variable into groups, `crp` for the
 #' one that splits a variable by whether it has a value, and `admit_date` for
 #' the one that reads a date at a chosen resolution.
 #'
-#' @format A data frame with 600 rows and 12 columns:
+#' @format A data frame with 600 rows and 13 columns:
 #' \describe{
 #'   \item{id}{Patient identifier, `"P0001"` to `"P0600"`.}
 #'   \item{age}{Age in years.}
@@ -52,6 +60,9 @@
 #'   \item{death}{`1` if the patient died during follow-up, `0` if censored.}
 #'   \item{admit_date}{Date of admission, over 2021 to 2023. Moderate and
 #'     severe cases cluster in the winter, mild ones in the summer.}
+#'   \item{svy_weight}{Survey weight: the number of admissions each patient
+#'     stands for, larger for the under-sampled mild presentations. Sums to
+#'     about 50,000.}
 #' }
 #'
 #' @source Simulated by `data-raw/epi_cohort.R`.
