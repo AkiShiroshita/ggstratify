@@ -21,15 +21,16 @@ an optional LOWESS smoother, and the Kaplan-Meier curve estimated by
 'survival', with an optional number-at-risk table. An error bar can show
 a standard error or a confidence interval, the latter from the t
 distribution for a mean and from the Clopper-Pearson or Wilson method
-for a proportion. A survey weight can be set: the figure is then drawn
-from the weighted data, every count is reported both as rows and as the
-sum of the weights, and error bars and confidence bands are design-based
-estimates from the 'survey' package. Columns are described as they are
-typed, so convert each to the type you mean first. Figures are written
-as PNG or SVG, and the application prints the 'ggplot2' code behind the
-figure on screen, so that a description can be repeated, shared or
-accounted for later. Everything runs locally, with no network access and
-no AI involved.
+for a proportion, and the points can be joined by a line computed from
+the same summary, which is how a trend over time is read. A survey
+weight can be set: the figure is then drawn from the weighted data,
+every count is reported both as rows and as the sum of the weights, and
+error bars and confidence bands are design-based estimates from the
+'survey' package. Columns are described as they are typed, so convert
+each to the type you mean first. Figures are written as PNG or SVG, and
+the application prints the 'ggplot2' code behind the figure on screen,
+so that a description can be repeated, shared or accounted for later.
+Everything runs locally, with no network access and no AI involved.
 
 ## See also
 
