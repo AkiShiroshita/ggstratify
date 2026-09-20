@@ -96,6 +96,11 @@ ggstratify(iris)                 # data.frame / tibble / data.table / matrix
 `Boxplot` / `Density` / `Dot + Error` / `Dotplot` / `Histogram` /
 `Kaplan-Meier curve` / `Line` / `Scatter` / `Violin`
 
+On a **Dot + Error** figure, **Join the dots with a line** under **Plot
+options** joins the points left to right -- one line per colour and per panel
+-- which is what a set of yearly estimates is usually read for. The line is
+computed by the same summary as the dots, so it passes through them.
+
 ## Derived variables
 
 **Derive a variable** makes a new variable out of one you already have, which

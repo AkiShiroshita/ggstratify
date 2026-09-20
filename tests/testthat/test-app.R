@@ -92,7 +92,7 @@ gs_test_inputs <- function(outdir) {
     cut_method = "quantile", cut_n = 4, cut_points = "", cut_name = "",
     cut_unit = "month", cut_season_start = "3",
     x_time_unit = "", x_time_every = 1, x_time_labels = "",
-    err_type = "se", err_level = 0.95, err_event = "",
+    err_type = "se", err_level = 0.95, err_event = "", dot_line = FALSE,
     tick_angle_x = "0", tick_angle_y = "0"
   )
 }
@@ -694,7 +694,7 @@ test_that("the UI builds and carries every control the server reads", {
   # as.character() renders the tags without pulling in htmltools by name.
   ui <- as.character(gs_ui())
   for (id in c("plot_type", "yvar", "xvar", "group", "timevar", "eventvar",
-               "km_ci", "km_risk", "idvar", "line_points", "smooth",
+               "km_ci", "km_risk", "idvar", "line_points", "dot_line", "smooth",
                "smooth_span", "smooth_se", "cut_var", "cut_method", "add_cut",
                "facet", "strat_vars", "strat_mode", "min_n", "show_n",
                "export", "format", "outdir", "preview_mode", "strata_table",
@@ -1013,6 +1013,30 @@ test_that("a Dot + Error bar can be a confidence interval instead of a standard 
     expect_match(output$code, "mean_ci <- function(x, conf = 0.95)", fixed = TRUE)
     expect_match(output$code,
                  "stat_summary(fun.data = mean_ci, fun.args = list(conf = 0.99)",
+                 fixed = TRUE)
+    expect_no_error(output$plot)
+  })
+})
+
+test_that("the dots of a Dot + Error figure can be joined into a trend", {
+  # A year on the x axis and a measurement on the y is the figure this is for:
+  # the dots say what each year was, the line says which way it went.
+  shiny::testServer(gs_server(epi_cohort, "epi_cohort"), {
+    do.call(session$setInputs, gs_test_inputs(tempdir()))
+    session$setInputs(plot_type = "Dot + Error", yvar = "los_days",
+                      xvar = "severity", group = "sex",
+                      strat_vars = character(), jitter = FALSE,
+                      data_name = "epi_cohort")
+    session$elapse(500)
+    expect_false(grepl('geom = "line"', output$code, fixed = TRUE))
+
+    session$setInputs(dot_line = TRUE)
+    session$elapse(500)
+
+    expect_length(problems(), 0L)
+    expect_true(spec_r()$dot_line)
+    expect_match(output$code,
+                 'stat_summary(aes(group = sex), fun.data = mean_se, geom = "line")',
                  fixed = TRUE)
     expect_no_error(output$plot)
   })

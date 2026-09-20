@@ -302,6 +302,20 @@ test_that("a single weighted observation gets a point and no interval", {
   expect_true(is.na(bars$ymin[1L]))
 })
 
+test_that("a weighted figure joins its dots with a plain line", {
+  # The estimates are already in the data the figure is drawn from, so the
+  # line is a geom over them rather than a second summary of the rows.
+  spec <- gs_spec(plot_type = GS_DOT, x = "severity", y = "bmi", weight = "w",
+                  group = "sex", dot_line = TRUE)
+  layers <- gs_code_dot_geom(spec)
+  expect_equal(layers, c("geom_line(aes(group = sex))", "geom_pointrange()"))
+
+  drawn <- ggplot2::ggplot_build(
+    get(".p", envir = run_figure(spec, weighted_cohort())))$data
+  # Through the estimated points, not beside them.
+  expect_equal(sort(drawn[[1L]]$y), sort(drawn[[2L]]$y))
+})
+
 test_that("a weighted Dot + Error figure draws however it is split", {
   dt <- weighted_cohort()
   for (spec in list(

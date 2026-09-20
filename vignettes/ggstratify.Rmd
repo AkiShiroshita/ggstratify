@@ -183,6 +183,33 @@ pick, the function that computes it is printed above the figure in the
 `death` in the bundled `epi_cohort` is coded 0 and 1, so
 `ggstratify(epi_cohort)` is enough to try this.
 
+### Joining the dots
+
+A Dot + Error figure drawn against time -- a year, a quarter, a month on the X
+axis -- is a set of estimates standing side by side, and what is being asked of
+it is usually which way they went. **Join the dots with a line** under **Plot
+options** draws that line:
+
+```{r, eval = FALSE}
+ggplot(d, aes(x = admit_year, y = los_days, colour = sex)) +
+  stat_summary(aes(group = sex), fun.data = mean_se, geom = "line") +
+  stat_summary(fun.data = mean_se, geom = "pointrange")
+```
+
+The line is computed by the same summary as the points, at the same confidence
+level, so it passes through them rather than near them; `geom_line()` reads
+only the point and ignores the interval beside it. It is drawn first, so the
+dots and their bars sit on top of it.
+
+The `group` is stated rather than left to `ggplot2`, which groups a figure by
+its discrete variables -- along a categorical X axis that is one group per
+point, and a line drawn that way would join nothing. With a grouping variable
+there is one line per colour; without one, a single line through every point.
+Panels are separate figures, so each gets its own line either way.
+
+The line says nothing a test would say: it is the dots joined up, not a trend
+fitted to them.
+
 ## Survey weights
 
 Data from a survey rarely describe the people in them one to one: each row

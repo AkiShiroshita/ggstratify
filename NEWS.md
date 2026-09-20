@@ -1,5 +1,12 @@
 # ggstratify 0.2.0
 
+* The dots of a **Dot + Error** figure can be joined by a line, under **Plot
+  options**. A set of estimates along a time axis is usually read for which way
+  it went, and the line is what says so. It is computed by the same summary as
+  the points it joins -- the same helper at the same confidence level -- so it
+  passes through them rather than near them, and it is drawn beneath them. One
+  line per colour when there is a grouping variable, and per panel.
+
 * **Survey weights.** A numeric column can be set as the survey weight under
   **Describe**. Each row then counts for as many people as its weight:
   histograms, densities, boxplots and violins are drawn through `ggplot2`'s

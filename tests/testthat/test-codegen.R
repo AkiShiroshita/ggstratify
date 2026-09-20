@@ -809,9 +809,61 @@ test_that("the error bar setting cannot reach another plot type's code", {
   # As with every other option that belongs to one type: a setting left behind
   # would otherwise call a helper that is no longer being defined.
   for (type in setdiff(GS_PLOT_TYPES, GS_DOT)) {
-    spec <- gs_spec(plot_type = type, x = "arm", y = "bp", err_type = "wilson")
+    spec <- gs_spec(plot_type = type, x = "arm", y = "bp", err_type = "wilson",
+                    dot_line = TRUE)
     expect_equal(spec$err_type, "se", info = type)
+    expect_false(spec$dot_line, info = type)
   }
+})
+
+test_that("the dots can be joined by a line, and are not by default", {
+  # The setting is new; the figure drawn when nothing is asked for is not.
+  plain <- gs_spec(plot_type = GS_DOT, x = "arm", y = "bp")
+  expect_false(plain$dot_line)
+  expect_length(gs_code_dot_geom(plain), 1L)
+
+  joined <- gs_spec(plot_type = GS_DOT, x = "arm", y = "bp", dot_line = TRUE)
+  layers <- gs_code_dot_geom(joined)
+  expect_length(layers, 2L)
+  # Under the points rather than across them.
+  expect_match(layers[1L], 'geom = "line"', fixed = TRUE)
+  expect_match(layers[2L], 'geom = "pointrange"', fixed = TRUE)
+  # A categorical x axis is one ggplot2 group per point, so a line that did
+  # not say what it joins would join nothing.
+  expect_match(layers[1L], "aes(group = 1)", fixed = TRUE)
+
+  # And the line is where the dots are.
+  built <- ggplot2::ggplot_build(gs_eval_plot(
+    c(gs_code_preamble(joined), gs_code_plot(joined, "d")), err_data()))$data
+  expect_equal(built[[1L]]$y, built[[2L]]$y)
+})
+
+test_that("the line is computed by the summary whose points it joins", {
+  # Not merely something that looks like it: the same helper at the same
+  # confidence level, so that the line passes through the dots by
+  # construction. geom_line() reads x and y and ignores the interval.
+  for (type in GS_ERR_TYPES) {
+    y <- if (type %in% GS_ERR_PROP_TYPES) "died" else "bp"
+    spec <- gs_spec(plot_type = GS_DOT, x = "arm", y = y, err_type = type,
+                    err_level = 0.9,
+                    err_event = if (type %in% GS_ERR_PROP_TYPES) "1" else "")
+    spec$dot_line <- TRUE
+    layers <- gs_code_dot_geom(spec)
+    expect_true(all(grepl(gs_dot_stat_args(spec), layers, fixed = TRUE)),
+                info = type)
+
+    built <- ggplot2::ggplot_build(gs_eval_plot(
+      c(gs_code_preamble(spec), gs_code_plot(spec, "d")), err_data()))$data
+    expect_equal(built[[1L]]$y, built[[2L]]$y, info = type)
+  }
+})
+
+test_that("a grouped figure gets one line per colour", {
+  # Which is the comparison the colours were asking for; one line through
+  # every point of every group would be a different figure.
+  grouped <- gs_spec(plot_type = GS_DOT, x = "arm", y = "bp", group = "sex",
+                     dot_line = TRUE)
+  expect_match(gs_code_dot_geom(grouped)[1L], "aes(group = sex)", fixed = TRUE)
 })
 
 test_that("a proportion interval is refused for a measurement, and the reverse", {

@@ -639,26 +639,61 @@ gs_err_helper <- function(err_type) {
          character())
 }
 
-#' The stat_summary() layer a Dot + Error figure is drawn from
+#' What stat_summary() computes each Dot + Error point from
 #'
 #' `mean_se` is ggplot2's own, so the default setting emits exactly the line it
 #' always did and needs nothing defined above it.
 #' @keywords internal
 #' @noRd
-gs_code_dot_geom <- function(spec) {
-  # The estimates are already in the data the figure is drawn from.
-  if (gs_weighted(spec)) return("geom_pointrange()")
-  if (identical(spec$err_type, "se")) {
-    return("stat_summary(fun.data = mean_se, geom = \"pointrange\")")
-  }
+gs_dot_stat_args <- function(spec) {
+  if (identical(spec$err_type, "se")) return("fun.data = mean_se")
   fun <- switch(spec$err_type,
                 normal = "mean_ci",
                 exact  = "prop_ci_exact",
                 wilson = "prop_ci_wilson",
                 stop("Unknown error bar: ", spec$err_type, call. = FALSE))
-  sprintf(paste0("stat_summary(fun.data = %s, fun.args = list(conf = %s), ",
-                 "geom = \"pointrange\")"),
-          fun, gs_n(spec$err_level))
+  sprintf("fun.data = %s, fun.args = list(conf = %s)", fun,
+          gs_n(spec$err_level))
+}
+
+#' The layers a Dot + Error figure is drawn from, in drawing order
+#'
+#' The connecting line is drawn first, so that the points and their bars sit
+#' on top of it rather than being crossed by it.
+#'
+#' The line is computed by the same summary as the points it joins -- the same
+#' helper, the same confidence level -- so that it passes through them by
+#' construction rather than by agreement. `geom_line()` reads only `x` and
+#' `y`, so the interval the helper returns beside the point is ignored here.
+#'
+#' It is also given a `group` of its own. ggplot2 groups by the discrete
+#' variables in the figure, which along a categorical x axis is one group per
+#' point: a line drawn that way would join nothing. Grouped by colour it draws
+#' one line per colour, which is the comparison the colours were asking for,
+#' and ungrouped it draws the single line through every point.
+#' @keywords internal
+#' @noRd
+gs_code_dot_geom <- function(spec) {
+  # The estimates are already in the data the figure is drawn from.
+  if (gs_weighted(spec)) {
+    return(c(if (isTRUE(spec$dot_line)) {
+               sprintf("geom_line(aes(group = %s))", gs_dot_line_group(spec))
+             },
+             "geom_pointrange()"))
+  }
+  args <- gs_dot_stat_args(spec)
+  c(if (isTRUE(spec$dot_line)) {
+      sprintf("stat_summary(aes(group = %s), %s, geom = \"line\")",
+              gs_dot_line_group(spec), args)
+    },
+    sprintf("stat_summary(%s, geom = \"pointrange\")", args))
+}
+
+#' What the connecting line groups by
+#' @keywords internal
+#' @noRd
+gs_dot_line_group <- function(spec) {
+  if (nzchar(spec$group)) gs_bt(spec$group) else "1"
 }
 
 #' The variables a Kaplan-Meier fit must be computed separately within

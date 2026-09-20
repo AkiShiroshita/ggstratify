@@ -207,6 +207,13 @@ gs_ui <- function() {
               shiny::selectInput("err_event", "Count as the outcome",
                                  choices = NULL)
             ),
+            shiny::checkboxInput("dot_line", "Join the dots with a line",
+                                 FALSE),
+            shiny::helpText(
+              "The line passes through the dots, left to right along the X",
+              "axis: what a trend over time is read from. It is drawn per",
+              "colour when there is a grouping variable, and per panel."
+            ),
           ),
           shiny::conditionalPanel(
             condition = "['Boxplot','Violin','Dot + Error'].includes(input.plot_type)",
@@ -445,13 +452,6 @@ gs_ui <- function() {
   )
 }
 
-#' The label the Derive-a-variable selector carries under a given method
-#'
-#' The pool it offers changes with the method -- see `gs_selector_choices()`
-#' -- and a label that still said "Continuous variable" over a list of factors
-#' and dates would be describing the wrong list.
-#' @keywords internal
-#' @noRd
 #' The label the Y selector carries under a given plot type and error bar
 #'
 #' A Dot + Error figure showing a proportion is asking for an outcome that

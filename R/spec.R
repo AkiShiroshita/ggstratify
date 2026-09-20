@@ -294,6 +294,9 @@ gs_spec <- function(...) {
     # happened. Read from the data by the server, as group_continuous is,
     # because the answer is a property of the column rather than of a control.
     err_event   = "",
+    # Dot + Error: join the points with a line, left to right. What turns a
+    # set of independent estimates into a trend over time.
+    dot_line    = FALSE,
 
     line_points = FALSE,          # Line: draw the observations as well
     smooth      = FALSE,          # LOWESS smoother, see GS_SMOOTH_TYPES
@@ -563,7 +566,10 @@ gs_normalize_spec <- function(spec) {
   # The error bar belongs to one plot type, so a setting left behind by
   # another can never reach the generated code -- and, with it, the helper
   # function that setting would have needed defining.
-  if (!identical(spec$plot_type, GS_DOT)) spec$err_type <- "se"
+  if (!identical(spec$plot_type, GS_DOT)) {
+    spec$err_type <- "se"
+    spec$dot_line <- FALSE
+  }
   if (!spec$err_type %in% GS_ERR_PROP_TYPES) spec$err_event <- ""
   if (!spec$err_type %in% GS_ERR_TYPES) spec$err_type <- "se"
   level <- gs_num(spec$err_level, 0.95)
@@ -626,6 +632,7 @@ gs_spec_from_input <- function(input, x_time_class = "", err_event = "") {
     err_type   = input$err_type %||% "se",
     err_level  = gs_num(input$err_level, 0.95),
     err_event  = err_event,
+    dot_line   = isTRUE(input$dot_line),
     line_points = isTRUE(input$line_points),
     smooth     = isTRUE(input$smooth),
     smooth_se  = isTRUE(input$smooth_se),
