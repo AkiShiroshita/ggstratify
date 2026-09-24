@@ -16,8 +16,11 @@ another update before then.
 ## Test environments
 
 * Windows 11 x64, R 4.6.0 (2026-04-24 ucrt) -- local, `R CMD check --as-cran`
-* win-builder, R-release -- `devtools::check_win_release()` (2026-09-24)
-* win-builder, R-devel -- `devtools::check_win_devel()` (2026-09-24)
+* win-builder, R-release (Windows Server 2022 x64 build 20348,
+  x86_64-w64-mingw32), R 4.6.1 (2026-06-24 ucrt) --
+  `devtools::check_win_release()` (2026-09-24)
+* win-builder, R-devel (2026-09-21 r90579 ucrt) --
+  `devtools::check_win_devel()` (2026-09-24)
 * macOS builder, macOS Tahoe 26.6 (aarch64-apple-darwin23),
   R 4.6.1 Patched (2026-07-27 r90311) -- `devtools::check_mac_release()`
 * R-hub v2 / Ubuntu 24.04.5 LTS (x86_64-pc-linux-gnu), R-devel (2026-09-23 r90586)
@@ -26,13 +29,18 @@ another update before then.
 
 ## R CMD check results
 
-0 errors | 0 warnings | 0 notes
+0 errors | 0 warnings | 1 NOTE
 
-The local `--as-cran` run, the macOS builder run and all three R-hub v2
-platforms finished with `Status: OK`. The "New submission" NOTE of 0.0.1 no
-longer applies, and `checking CRAN incoming feasibility` is clean: the
-DESCRIPTION spelling that was queried last time ("Kaplan", a surname) is no
-longer flagged.
+Both win-builder runs finished with `Status: 1 NOTE`. The local `--as-cran`
+run, the macOS builder run and all three R-hub v2 platforms finished with
+`Status: OK`. The "New submission" NOTE of 0.0.1 no longer applies.
+
+The NOTE is from `checking CRAN incoming feasibility` and has one part:
+
+* *Possibly misspelled words in DESCRIPTION: Clopper (37:48).* "Clopper" is a
+  surname: the DESCRIPTION describes the Clopper-Pearson interval, after C. J.
+  Clopper and E. S. Pearson, who published it in 1934. The spelling is
+  correct.
 
 `R CMD check` reports no unstated dependencies in the tests or the vignette.
 Examples, tests (`testthat.R`), vignette rebuild, and both the PDF and the
