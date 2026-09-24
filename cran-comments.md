@@ -1,33 +1,49 @@
+## Submission
+
+This is an update to ggstratify 0.0.1, on CRAN since 2026-09-02. Version 0.2.0
+adds survey-weight support with design-based intervals from the 'survey'
+package, a time-resolution method for deriving a variable from a date or a
+date-time, confidence intervals on the Dot + Error figure, and a
+missing-vs-observed method for deriving a variable. `NEWS.md` lists the
+changes; there are no user-visible changes to the existing interface and no
+deprecations.
+
+0.0.1 was published three weeks ago, sooner than the one-to-two-month interval
+the Repository Policy asks updates to keep to. If you would rather hold this
+one until late October, please do; nothing here is urgent, and I will not send
+another update before then.
+
 ## Test environments
 
 * Windows 11 x64, R 4.6.0 (2026-04-24 ucrt) -- local, `R CMD check --as-cran`
-* win-builder, R-release (Windows Server 2022 x64 build 20348,
-  x86_64-w64-mingw32), R 4.6.1 (2026-06-24 ucrt) --
-  `devtools::check_win_release()` (2026-08-18)
-* win-builder, R-devel -- `devtools::check_win_devel()`
-* win-builder, R-oldrelease -- `devtools::check_win_oldrelease()`
-* Posit Cloud / Linux (R 4.6.1 on Ubuntu 24.04.4 LTS (x86_64))
-* R-hub v2 / Ubuntu 24.04.4 LTS (x86_64-pc-linux-gnu), R-devel (2026-06-21 r90185)
-* R-hub v2 / macOS Sequoia 15.7.7 (x86_64-apple-darwin20), R-devel (2026-06-24 r90190)
-* R-hub v2 / Windows Server 2022 (x86_64-w64-mingw32), R-devel (2026-08-15 r90413 ucrt)
+* win-builder, R-release -- `devtools::check_win_release()` (2026-09-24)
+* win-builder, R-devel -- `devtools::check_win_devel()` (2026-09-24)
+* macOS builder, macOS Tahoe 26.6 (aarch64-apple-darwin23),
+  R 4.6.1 Patched (2026-07-27 r90311) -- `devtools::check_mac_release()`
+* R-hub v2 / Ubuntu 24.04.5 LTS (x86_64-pc-linux-gnu), R-devel (2026-09-23 r90586)
+* R-hub v2 / macOS Sequoia 15.7.9, R-devel (2026-09-23 r90587)
+* R-hub v2 / Windows Server 2022 x64 (x86_64-w64-mingw32), R-devel (2026-09-23 r90587 ucrt)
 
 ## R CMD check results
 
-0 errors | 0 warnings | 1 NOTE
+0 errors | 0 warnings | 0 notes
 
-win-builder R-release (above) finished with Status: 1 NOTE. The three R-hub
-environments do not run `checking CRAN incoming feasibility` and are clean:
-0 NOTEs. Every other environment that runs that check reports the same NOTE,
-which has two parts, both expected:
-
-* *New submission.* This is the package's first release.
-* *Possibly misspelled words in DESCRIPTION: Kaplan (29:39).* "Kaplan" is a
-  surname: the DESCRIPTION describes the Kaplan-Meier estimator, after
-  Edward L. Kaplan and Paul Meier. The spelling is correct.
+The local `--as-cran` run, the macOS builder run and all three R-hub v2
+platforms finished with `Status: OK`. The "New submission" NOTE of 0.0.1 no
+longer applies, and `checking CRAN incoming feasibility` is clean: the
+DESCRIPTION spelling that was queried last time ("Kaplan", a surname) is no
+longer flagged.
 
 `R CMD check` reports no unstated dependencies in the tests or the vignette.
-Examples, tests (`testthat.R`), vignette rebuild, and both PDF and HTML
-manuals all passed on win-builder R-release.
+Examples, tests (`testthat.R`), vignette rebuild, and both the PDF and the
+HTML manual all passed.
+
+## New dependency
+
+'survey' (>= 4.5) has been added to Imports. It is what computes the
+design-based standard errors, confidence intervals and Kaplan-Meier bands when
+the user sets a survey weight; nothing else in the package needs it, and the
+figures that do not involve a weight do not call it.
 
 ## Accepted input types
 
@@ -65,11 +81,15 @@ path of what was written is reported back on screen afterwards.
 
 ## Test suite
 
-`devtools::test()` on Windows 11 x64 with R 4.6.0: 656 passing, 0 failures,
-0 warnings, 0 skips.
+`R CMD check --as-cran` on Windows 11 x64 with R 4.6.0 ran the suite in 212
+seconds: 1349 passing, 0 failures, 0 warnings, 0 skips.
 
 The preview subsampling caps are one million rows (scatter and line plots) and
 ten million rows (the plot types that summarise their rows before drawing).
 The tests exercise the sampling rules through an injected threshold rather
 than by allocating a table of that size, so the suite stays within a check
 machine's memory.
+
+## Reverse dependencies
+
+There are none.

@@ -1,8 +1,8 @@
 cff-version: 1.2.0
-title: "ggstratify: Interactive Descriptive Analysis with Shiny"
-version: 0.0.1
+title: "ggstratify: Fast Stratified Descriptive Figures with a Point-and-Click GUI"
+version: 0.2.0
 doi: 10.5281/zenodo.21961507
-date-released: 2026-08-15
+date-released: 2026-09-24
 
 authors:
   - family-names: "Shiroshita"

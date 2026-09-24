@@ -43,6 +43,10 @@ jobs:
         with:
           r-version: ${{ matrix.config.r }}
           http-user-agent: ${{ matrix.config.http-user-agent }}
+          # CRAN's macOS binaries are now zstd-compressed, which pak cannot
+          # unpack (r-lib/pkgdepends#485). Posit's mirror still serves gzip,
+          # so take binaries from there on every platform until that lands.
+          use-public-rspm: always
 
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
