@@ -1,6 +1,6 @@
 Package: ggstratify
 Title: Fast Stratified Descriptive Figures with a Point-and-Click GUI
-Version: 0.2.0
+Version: 0.2.0.9000
 Authors@R:
     c(
       person(

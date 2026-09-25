@@ -1,3 +1,5 @@
+# ggstratify (development version)
+
 # ggstratify 0.2.0
 
 * The dots of a **Dot + Error** figure can be joined by a line, under **Plot
