@@ -1,5 +1,7 @@
 # Changelog
 
+## ggstratify (development version)
+
 ## ggstratify 0.2.0
 
 CRAN release: 2026-09-25
