@@ -9,7 +9,7 @@
 ## Citation
 
 Source:
-[`inst/CITATION`](https://github.com/AkiShiroshita/ggstratify/blob/main/inst/CITATION)
+[`inst/CITATION`](https://github.com/AkiShiroshita/ggstratify/blob/v0.2.0/inst/CITATION)
 
 Shiroshita A, Kataoka Y (2026). *ggstratify: Fast Stratified Descriptive
 Figures with a Point-and-Click GUI*.

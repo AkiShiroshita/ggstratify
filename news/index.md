@@ -2,6 +2,8 @@
 
 ## ggstratify 0.2.0
 
+CRAN release: 2026-09-25
+
 - The dots of a **Dot + Error** figure can be joined by a line, under
   **Plot options**. A set of estimates along a time axis is usually read
   for which way it went, and the line is what says so. It is computed by
